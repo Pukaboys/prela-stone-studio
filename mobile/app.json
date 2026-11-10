@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Prela Stone Studio",
+    "slug": "prela-stone-studio",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "prelastone",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#101716"
+      }
+    },
+    "plugins": [
+      "expo-image-picker",
+      "expo-status-bar"
+    ]
+  }
+}
