@@ -1,5 +1,56 @@
-import {env} from 'cloudflare:workers';
-import {validProject} from '@/lib/model';
-const bucket=()=> (env as unknown as {BUCKET:R2Bucket}).BUCKET;
-export async function GET(req:Request){try{const id=new URL(req.url).searchParams.get('id');if(id){if(!/^[a-zA-Z0-9-]+$/.test(id))return new Response('Invalid project',{status:400});const o=await bucket().get('projects/'+id+'.json');if(!o)return new Response('Project not found',{status:404});return new Response(o.body,{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});}const list=await bucket().list({prefix:'projects/',include:['customMetadata'],limit:1000} as R2ListOptions & {include:string[]});return Response.json(list.objects.map(o=>({id:o.key.slice(9,-5),name:o.customMetadata?.name||'Untitled',updated:o.uploaded})).sort((a,b)=>new Date(b.updated).getTime()-new Date(a.updated).getTime()));}catch(e){console.error(e);return new Response('Could not load projects. Please try again.',{status:503});}}
-export async function POST(req:Request){try{const raw=await req.text();if(raw.length>500000)return new Response('Project too large',{status:413});const p=JSON.parse(raw);if(!validProject(p))return new Response('Invalid project data',{status:400});const id=p.id||crypto.randomUUID();if(!/^[a-zA-Z0-9-]+$/.test(id))return new Response('Invalid project ID',{status:400});p.id=id;await bucket().put('projects/'+id+'.json',JSON.stringify(p),{httpMetadata:{contentType:'application/json'},customMetadata:{name:p.name}});return Response.json({id});}catch(e){console.error(e);return new Response('Could not save. Your work is still open; please try again.',{status:503});}}
+import { validProject } from "@/lib/model";
+import { getStore } from "@/lib/storage";
+
+const ID = /^[a-zA-Z0-9-]+$/;
+const MAX_CHARS = 500_000;
+
+export async function GET(req: Request) {
+  try {
+    const store = await getStore();
+    const id = new URL(req.url).searchParams.get("id");
+    if (id) {
+      if (!ID.test(id)) return new Response("Invalid project", { status: 400 });
+      const obj = await store.get("projects/" + id + ".json");
+      if (!obj) return new Response("Project not found", { status: 404 });
+      return new Response(obj.body as BodyInit, {
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+    const list = await store.list("projects/");
+    return Response.json(
+      list
+        .filter((o) => o.key.endsWith(".json"))
+        .map((o) => ({
+          id: o.key.slice("projects/".length, -".json".length),
+          name: o.meta.name || "Untitled",
+          updated: o.uploaded,
+        }))
+        .sort((a, b) => b.updated.getTime() - a.updated.getTime()),
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (e) {
+    console.error(e);
+    return new Response("Could not load projects. Please try again.", { status: 503 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const raw = await req.text();
+    if (raw.length > MAX_CHARS) return new Response("Project too large", { status: 413 });
+    const p = JSON.parse(raw);
+    if (!validProject(p)) return new Response("Invalid project data", { status: 400 });
+    const id = p.id || crypto.randomUUID();
+    if (!ID.test(id)) return new Response("Invalid project ID", { status: 400 });
+    p.id = id;
+    await (await getStore()).put("projects/" + id + ".json", JSON.stringify(p), "application/json", {
+      name: p.name,
+    });
+    return Response.json({ id });
+  } catch (e) {
+    console.error(e);
+    return new Response("Could not save. Your work is still open; please try again.", {
+      status: 503,
+    });
+  }
+}

@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { getSetting } from "@/lib/storage";
 
 type Point = { x: number; y: number };
 type Calibration = { tl: Point; tr: Point; br: Point; bl: Point };
@@ -38,7 +38,7 @@ async function detectCorners(key: string, image: string) {
 
 export async function POST(req: Request) {
   try {
-    const key = (env as unknown as { OPENAI_API_KEY?: string }).OPENAI_API_KEY || (typeof process !== "undefined" ? process.env.OPENAI_API_KEY : undefined);
+    const key = await getSetting("OPENAI_API_KEY");
     if (!key) return new Response("OPENAI_API_KEY is not configured on the server.", { status: 503 });
     const body = await req.json() as { image?: string };
     if (!body.image?.startsWith("data:image/")) return new Response("Send the slab image as a data URL.", { status: 400 });
