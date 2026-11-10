@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Project, Piece } from "@/lib/model";
-import { opening } from "@/lib/model";
+import { opening, slabCrop } from "@/lib/model";
 
 type Props = {
   project: Project;
@@ -153,13 +153,20 @@ export default function Assembly3D({
         steps: 1,
       });
         const positions = geometry.getAttribute("position"),
-          uv = geometry.getAttribute("uv");
+          uv = geometry.getAttribute("uv"),
+          crop = slabCrop(slab);
         for (let i = 0; i < positions.count; i++) {
           const x = positions.getX(i),
             y = -positions.getY(i);
           const sx = piece.rot ? piece.x + piece.h - y : piece.x + x;
           const sy = piece.rot ? piece.y + x : piece.y + y;
-          uv.setXY(i, sx / slab.w, 1 - sy / slab.h);
+          // Map slab millimetres into the cropped region of the photo so the
+          // 3D veins match what the slab layout shows.
+          uv.setXY(
+            i,
+            crop.x + (sx / slab.w) * crop.w,
+            1 - (crop.y + (sy / slab.h) * crop.h),
+          );
         }
         uv.needsUpdate = true;
         geometries.push(geometry);

@@ -132,6 +132,50 @@ export function demo(): Project {
   };
 }
 export const pieceAngle = (p: Piece) => p.cutAngle ?? 0;
+
+/** Default crop that fills the slab rectangle with the photo (center crop, no stretching). */
+export function fitPhotoCrop(slab: Slab): PhotoCrop {
+  const sourceAspect = (slab.photoWidth ?? slab.w) / (slab.photoHeight ?? slab.h);
+  const slabAspect = slab.w / slab.h;
+  if (sourceAspect > slabAspect) {
+    const w = slabAspect / sourceAspect;
+    return { x: (1 - w) / 2, y: 0, w, h: 1 };
+  }
+  const h = sourceAspect / slabAspect;
+  return { x: 0, y: (1 - h) / 2, w: 1, h };
+}
+
+function cropFromCalibration(slab: Slab): PhotoCrop | undefined {
+  const q = slab.calibration;
+  if (!q) return undefined;
+  const xs = [q.tl.x, q.tr.x, q.br.x, q.bl.x],
+    ys = [q.tl.y, q.tr.y, q.br.y, q.bl.y];
+  const x = Math.max(0, Math.min(...xs)),
+    y = Math.max(0, Math.min(...ys));
+  const right = Math.min(1, Math.max(...xs)),
+    bottom = Math.min(1, Math.max(...ys));
+  return { x, y, w: Math.max(0.02, right - x), h: Math.max(0.02, bottom - y) };
+}
+
+/**
+ * The part of the photo (normalized 0..1) that represents the slab.
+ * Every view (slab layout, 2D assembly, 3D assembly) must use this so the
+ * veins shown on a placed piece match the finished preview.
+ */
+export function slabCrop(slab: Slab): PhotoCrop {
+  return cropFromCalibration(slab) ?? slab.crop ?? fitPhotoCrop(slab);
+}
+
+/** Geometry for drawing the slab photo in slab millimetre coordinates. */
+export function slabImageRect(slab: Slab) {
+  const c = slabCrop(slab);
+  return {
+    x: (-c.x * slab.w) / c.w,
+    y: (-c.y * slab.h) / c.h,
+    w: slab.w / c.w,
+    h: slab.h / c.h,
+  };
+}
 export const footprint = (p: Piece) => ({
   w: p.rot ? p.h : p.w,
   h: p.rot ? p.w : p.h,
@@ -144,8 +188,12 @@ export function opening(p: Piece, onSlab = false) {
     ? { x: p.x + p.h - y - p.holeH, y: p.y + x, w: p.holeH, h: p.holeW }
     : { x: p.x + x, y: p.y + y, w: p.holeW, h: p.holeH };
 }
-export function issues(pr: Project) {
-  const out: { id: string; text: string }[] = [];
+export type Issue = { id: string; related?: string; text: string };
+/** True when a placement issue involves the given piece. */
+export const hasIssue = (list: Issue[], id: string) =>
+  list.some((w) => w.id === id || w.related === id);
+export function issues(pr: Project): Issue[] {
+  const out: Issue[] = [];
   for (const p of pr.pieces) {
     const s = pr.slabs.find((s) => s.id === p.slab);
     const b = footprint(p);
@@ -177,11 +225,10 @@ export function issues(pr: Project) {
         p.x + b.w + pr.kerf > q.x &&
         p.y < q.y + c.h + pr.kerf &&
         p.y + b.h + pr.kerf > q.y
-      )
-        out.push({
-          id: p.id,
-          text: p.name + " / " + q.name + ": overlap or insufficient blade gap",
-        });
+      ) {
+        const text = p.name + " / " + q.name + ": overlap or insufficient blade gap";
+        out.push({ id: p.id, related: q.id, text });
+      }
     }
     for (const d of pr.defects.filter((d) => d.slab === p.slab)) {
       if (

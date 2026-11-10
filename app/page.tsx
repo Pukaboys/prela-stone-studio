@@ -20,6 +20,8 @@ import {
   ArrowUpRight,
   Copy,
   SlidersHorizontal,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import {
   Dialog,
@@ -36,8 +38,11 @@ import {
   footprint,
   opening,
   issues,
+  hasIssue,
   validProject,
   pieceAngle,
+  slabCrop,
+  slabImageRect,
   type Project,
   type Piece,
   type CutAngle,
@@ -47,6 +52,11 @@ import {
   type Defect,
   type Slab,
 } from "@/lib/model";
+/**
+ * Numeric field that keeps a local text draft, so users can clear the field
+ * and type a new value. Only valid, in-range numbers are committed; the field
+ * reverts to the last committed value on blur or Escape.
+ */
 function Num({
   label,
   value,
@@ -62,19 +72,40 @@ function Num({
   max?: number;
   unit?: string;
 }) {
+  // `draft` is null while the field is not being edited, so it always shows
+  // the committed value; while focused it holds whatever the user typed.
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft ?? String(value);
+  const parsed = Number(text);
+  const invalid =
+    draft !== null &&
+    (text.trim() === "" || !Number.isFinite(parsed) || parsed < min || parsed > max);
   return (
-    <label className="field">
+    <label className={"field" + (invalid ? " invalid" : "")}>
       <span>{label}</span>
       <div>
         <input
           type="number"
+          inputMode="decimal"
           min={min}
           max={max}
-          value={value}
+          value={text}
+          aria-invalid={invalid || undefined}
+          title={`${min} – ${max} ${unit}`}
+          onFocus={() => setDraft(String(value))}
           onChange={(e) => {
-            if (e.target.value !== "") {
-              const n = Number(e.target.value);
-              if (Number.isFinite(n) && n >= min && n <= max) onChange(n);
+            const next = e.target.value;
+            setDraft(next);
+            const n = Number(next);
+            if (next.trim() !== "" && Number.isFinite(n) && n >= min && n <= max && n !== value)
+              onChange(n);
+          }}
+          onBlur={() => setDraft(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              setDraft(null);
+              e.currentTarget.blur();
             }
           }}
         />
@@ -131,26 +162,6 @@ function cropPoint(e: React.PointerEvent<HTMLDivElement>, host: HTMLDivElement) 
     x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
     y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
   };
-}
-
-function fitPhotoCrop(slab: Slab): PhotoCrop {
-  const sourceAspect = (slab.photoWidth ?? slab.w) / (slab.photoHeight ?? slab.h);
-  const slabAspect = slab.w / slab.h;
-  if (sourceAspect > slabAspect) {
-    const w = slabAspect / sourceAspect;
-    return { x: (1 - w) / 2, y: 0, w, h: 1 };
-  }
-  const h = sourceAspect / slabAspect;
-  return { x: 0, y: (1 - h) / 2, w: 1, h };
-}
-
-function cropFromCalibration(slab: Slab): PhotoCrop | undefined {
-  const q = slab.calibration;
-  if (!q) return undefined;
-  const xs = [q.tl.x, q.tr.x, q.br.x, q.bl.x], ys = [q.tl.y, q.tr.y, q.br.y, q.bl.y];
-  const x = Math.max(0, Math.min(...xs)), y = Math.max(0, Math.min(...ys));
-  const right = Math.min(1, Math.max(...xs)), bottom = Math.min(1, Math.max(...ys));
-  return { x, y, w: Math.max(.02, right - x), h: Math.max(.02, bottom - y) };
 }
 
 type PixelPoint = { x: number; y: number };
@@ -219,41 +230,8 @@ function AiPhotoEditor({ slab, onAiEdit }: { slab: Slab; onAiEdit: () => Promise
   return <div className="photo-calibrator"><div className="photo-calibrator-canvas ai-photo-editor" style={{ aspectRatio: (slab.photoWidth ?? slab.w) / (slab.photoHeight ?? slab.h) }}><img src={slab.image} alt="Slab source photo" /></div><div className="photo-calibrator-actions"><button className="primary" disabled={busy} onClick={edit}>{busy ? "AI is editing the slab…" : "AI isolate and straighten slab"}</button><span>The original photo will be replaced with a centered, front-facing slab on a transparent background.</span></div><div className="photo-adjustments"><b>AI photo edit</b><span>It removes the background and corrects perspective automatically. No corner calibration is required.</span></div></div>;
 }
 
-function QuadPhotoCalibrator({ slab, crop, calibration, onChange, onCalibrate, onAiCalibrate }: { slab: Slab; crop?: PhotoCrop; calibration?: PhotoQuad; onChange: (crop: PhotoCrop) => void; onCalibrate: (calibration: PhotoQuad) => void; onAiCalibrate: () => Promise<void> }) {
-  const host = useRef<HTMLDivElement>(null);
-  const defaultQuad: PhotoQuad = { tl: { x: .05, y: .12 }, tr: { x: .95, y: .12 }, br: { x: .95, y: .88 }, bl: { x: .05, y: .88 } };
-  const [quad, setQuad] = useState<PhotoQuad>(calibration ?? defaultQuad);
-  const [aiBusy, setAiBusy] = useState(false);
-  const active = useRef<keyof PhotoQuad | null>(null);
-  const quadRef = useRef<PhotoQuad>(calibration ?? defaultQuad);
-  useEffect(() => { const next = calibration ?? defaultQuad; quadRef.current = next; setQuad(next); }, [calibration, slab.id]);
-  function localPoint(e: React.PointerEvent<HTMLDivElement>) { return cropPoint(e, host.current as HTMLDivElement); }
-  function startCorner(e: React.PointerEvent<HTMLButtonElement>, corner: keyof PhotoQuad) { e.stopPropagation(); active.current = corner; e.currentTarget.setPointerCapture(e.pointerId); }
-  function moveCorner(e: React.PointerEvent<HTMLDivElement>) { if (!active.current) return; const corner = active.current; const p = localPoint(e); const next = { ...quadRef.current, [corner]: p } as PhotoQuad; quadRef.current = next; setQuad(next); }
-  function finishCorner() { if (active.current) onCalibrate(quadRef.current); active.current = null; }
-  async function detectCorners() { setAiBusy(true); try { await onAiCalibrate(); } finally { setAiBusy(false); } }
-  const points = (["tl", "tr", "br", "bl"] as const).map((key) => `${quad[key].x * 100},${quad[key].y * 100}`).join(" ");
-  return <div className="photo-calibrator"><div ref={host} className="photo-calibrator-canvas quad-calibrator" style={{ aspectRatio: (slab.photoWidth ?? slab.w) / (slab.photoHeight ?? slab.h) }} onPointerMove={moveCorner} onPointerUp={finishCorner} onPointerCancel={finishCorner}><img src={slab.image} alt="Slab calibration source" /><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points={points} fill="#bde96e22" stroke="#bde96e" strokeWidth=".7" strokeDasharray="2 1" /></svg>{(["tl", "tr", "br", "bl"] as const).map((corner) => <button type="button" aria-label={`Move ${corner} slab corner`} key={corner} className={`quad-handle ${corner}`} style={{ left: `${quad[corner].x * 100}%`, top: `${quad[corner].y * 100}%` }} onPointerDown={(e) => startCorner(e, corner)}><span>{corner.toUpperCase()}</span></button>)}</div><div className="photo-calibrator-actions"><button className="primary" disabled={aiBusy} onClick={detectCorners}>{aiBusy ? "AI is extracting slab…" : "AI extract straight slab"}</button><button onClick={() => onChange({ x: 0, y: 0, w: 1, h: 1 })}>Use full photo</button><button onClick={() => { quadRef.current = defaultQuad; setQuad(defaultQuad); onCalibrate(defaultQuad); }}>Reset corners</button><span>AI removes the background and corrects perspective using the four slab edges.</span></div><div className="photo-adjustments"><b>AI slab extraction</b><span>The result is a front-facing slab image. Check the corners first if the photo contains heavy occlusion.</span></div></div>;
-}
-
-function PhotoCalibrator({ slab, crop, adjustments, onChange, onAdjust }: { slab: Slab; crop?: PhotoCrop; adjustments?: PhotoAdjustments; onChange: (crop: PhotoCrop) => void; onAdjust: (adjustments: PhotoAdjustments) => void }) {
-  const host = useRef<HTMLDivElement>(null), action = useRef<{ mode: "draw" | "move" | "resize"; start: { x: number; y: number }; initial: PhotoCrop; corner?: string } | null>(null), draftRef = useRef(crop ?? { x: 0, y: 0, w: 1, h: 1 });
-  const [draft, setDraft] = useState<PhotoCrop>(draftRef.current);
-  useEffect(() => { const next = crop ?? fitPhotoCrop(slab); draftRef.current = next; setDraft(next); }, [crop, slab]);
-  function update(next: PhotoCrop) { draftRef.current = next; setDraft(next); }
-  function begin(e: React.PointerEvent<HTMLDivElement>) { if (!host.current) return; const p = cropPoint(e, host.current), c = draftRef.current; const corners = { tl: [c.x, c.y], tr: [c.x + c.w, c.y], bl: [c.x, c.y + c.h], br: [c.x + c.w, c.y + c.h] }; const corner = Object.entries(corners).find(([, v]) => Math.hypot(v[0] - p.x, v[1] - p.y) < .06)?.[0]; action.current = { mode: corner ? "resize" : p.x >= c.x && p.x <= c.x + c.w && p.y >= c.y && p.y <= c.y + c.h ? "move" : "draw", start: p, initial: c, corner }; host.current.setPointerCapture(e.pointerId); }
-  function move(e: React.PointerEvent<HTMLDivElement>) { if (!action.current || !host.current) return; const a = action.current, p = cropPoint(e, host.current); if (a.mode === "draw") { update({ x: Math.min(a.start.x, p.x), y: Math.min(a.start.y, p.y), w: Math.max(.02, Math.abs(p.x - a.start.x)), h: Math.max(.02, Math.abs(p.y - a.start.y)) }); return; } if (a.mode === "move") { update({ x: Math.max(0, Math.min(1 - a.initial.w, a.initial.x + p.x - a.start.x)), y: Math.max(0, Math.min(1 - a.initial.h, a.initial.y + p.y - a.start.y)), w: a.initial.w, h: a.initial.h }); return; } const c = a.initial, min = .03; let x = c.x, y = c.y, w = c.w, h = c.h; if (a.corner?.includes("l")) { x = Math.max(0, Math.min(c.x + c.w - min, p.x)); w = c.x + c.w - x; } if (a.corner?.includes("r")) w = Math.max(min, Math.min(1 - c.x, p.x - c.x)); if (a.corner?.includes("t")) { y = Math.max(0, Math.min(c.y + c.h - min, p.y)); h = c.y + c.h - y; } if (a.corner?.includes("b")) h = Math.max(min, Math.min(1 - c.y, p.y - c.y)); update({ x, y, w, h }); }
-  function finish() { if (!action.current) return; action.current = null; onChange(draftRef.current); }
-  function setAspect(ratio?: number) { const c = draftRef.current; if (!ratio) return; const w = Math.min(c.w, c.h * ratio), h = w / ratio, next = { x: Math.max(0, Math.min(1 - w, c.x + (c.w - w) / 2)), y: Math.max(0, Math.min(1 - h, c.y + (c.h - h) / 2)), w, h }; update(next); onChange(next); }
-  const c = draft;
-  const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
-  const a = adjustments ?? { straighten: 0, perspectiveV: 0, perspectiveH: 0 };
-  const imageTransform = photoPerspectiveTransform(a);
-  return <div className="photo-calibrator"><div ref={host} className="photo-calibrator-canvas" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}><img src={slab.image} alt="Slab calibration source" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%`, transform: imageTransform }} /><div className="photo-crop-box" style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` }}><span>CROP / CALIBRATED AREA</span>{["tl", "tr", "bl", "br"].map((corner) => <i key={corner} className={`crop-handle ${corner}`} />)}</div></div><div className="photo-calibrator-actions"><button onClick={() => { const full = { x: 0, y: 0, w: 1, h: 1 }; update(full); onChange(full); }}>Full</button><button onClick={() => setAspect(1)}>Square</button><button onClick={() => setAspect(4 / 3)}>4:3</button><button onClick={() => setAspect(16 / 9)}>16:9</button><span>Drag the crop; move it or adjust the corner handles like iPhone Photos.</span></div><div className="photo-adjustments"><label>Straighten <input type="range" min={-15} max={15} step={0.1} value={a.straighten} onChange={(e) => onAdjust({ ...a, straighten: Number(e.target.value) })} /><b>{a.straighten.toFixed(1)}°</b></label><label>Vertical perspective <input type="range" min={-45} max={45} step={0.5} value={a.perspectiveV} onChange={(e) => onAdjust({ ...a, perspectiveV: Number(e.target.value) })} /><b>{a.perspectiveV.toFixed(1)}°</b></label><label>Horizontal perspective <input type="range" min={-45} max={45} step={0.5} value={a.perspectiveH} onChange={(e) => onAdjust({ ...a, perspectiveH: Number(e.target.value) })} /><b>{a.perspectiveH.toFixed(1)}°</b></label><button onClick={() => onAdjust({ straighten: 0, perspectiveV: 0, perspectiveH: 0 })}>Reset adjustments</button></div></div>;
-}
-
-function DefectPainter({ slab, crop, calibration, adjustments, defects, onAdd }: { slab: Slab; crop?: PhotoCrop; calibration?: PhotoQuad; adjustments?: PhotoAdjustments; defects: Defect[]; onAdd: (defect: Defect) => void }) {
-  const host = useRef<HTMLDivElement>(null), stroke = useRef<{ x: number; y: number }[]>([]), c = crop ?? fitPhotoCrop(slab); const [draft, setDraft] = useState<{ x: number; y: number }[]>([]); const [brush, setBrush] = useState(45);
+function DefectPainter({ slab, crop, calibration, adjustments, defects, onAdd }: { slab: Slab; crop: PhotoCrop; calibration?: PhotoQuad; adjustments?: PhotoAdjustments; defects: Defect[]; onAdd: (defect: Defect) => void }) {
+  const host = useRef<HTMLDivElement>(null), stroke = useRef<{ x: number; y: number }[]>([]), c = crop; const [draft, setDraft] = useState<{ x: number; y: number }[]>([]); const [brush, setBrush] = useState(45);
   function toSlab(e: React.PointerEvent<HTMLDivElement>) { if (!host.current) return { x: 0, y: 0 }; const p = cropPoint(e, host.current); return { x: p.x * slab.w, y: p.y * slab.h }; }
   function begin(e: React.PointerEvent<HTMLDivElement>) { stroke.current = [toSlab(e)]; setDraft(stroke.current); host.current?.setPointerCapture(e.pointerId); }
   function move(e: React.PointerEvent<HTMLDivElement>) { if (!stroke.current.length) return; const p = toSlab(e), last = stroke.current[stroke.current.length - 1]; if (Math.hypot(p.x - last.x, p.y - last.y) < 8) return; stroke.current = [...stroke.current, p]; setDraft(stroke.current); }
@@ -265,15 +243,43 @@ function DefectPainter({ slab, crop, calibration, adjustments, defects, onAdd }:
   const calibratedPoints = calibration ? (["tl", "tr", "br", "bl"] as const).map((key) => `${((calibration[key].x - c.x) / c.w) * slab.w},${((calibration[key].y - c.y) / c.h) * slab.h}`).join(" ") : "";
   return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%`, transform: imageTransform }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{calibratedPoints && <polygon points={calibratedPoints} fill="#bde96e18" stroke="#bde96e" strokeWidth={10} strokeDasharray="28 18" />}{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush. The green outline is the calibrated slab boundary.</p></div>;
 }
+type DialogId = "" | "slab" | "projects" | "export" | "checks" | "help" | "defects";
+const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
+  slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
+  projects: { title: "Your projects", description: "Saved projects are available when you return." },
+  export: { title: "Export project", description: "Keep a project file or share the planned layout." },
+  checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
+  help: { title: "From slab to finished surface", description: "Plan the pattern before you make the cut." },
+  defects: { title: "Marked defects", description: "Mark damaged areas so placement checks keep pieces clear of them." },
+};
+type SaveState = "new" | "dirty" | "saved";
+const saveLabels: Record<SaveState, string> = {
+  new: "Not saved yet",
+  dirty: "Unsaved changes",
+  saved: "All changes saved",
+};
+type ProjectSummary = { id: string; name: string; updated: string };
+type DragState = {
+  id: string;
+  assembly: boolean;
+  start: { x: number; y: number };
+  x: number;
+  y: number;
+  recorded: boolean;
+};
+const ZOOM_MIN = 0.5,
+  ZOOM_MAX = 3,
+  ZOOM_STEP = 0.25;
+
 export default function Studio() {
   const [pr, setPr] = useState<Project>(demo),
     [sid, setSid] = useState("s1"),
     [selected, setSelected] = useState("p1"),
     [view, setView] = useState("split"),
-    [dialog, setDialog] = useState(""),
+    [dialog, setDialog] = useState<DialogId>(""),
     [busy, setBusy] = useState(false),
-    [saved, setSaved] = useState("Unsaved project"),
-    [projects, setProjects] = useState<any[]>([]),
+    [saved, setSaved] = useState<SaveState>("new"),
+    [projects, setProjects] = useState<ProjectSummary[]>([]),
     [loadError, setLoadError] = useState(""),
     [zoom, setZoom] = useState(1),
     [showLabels, setShowLabels] = useState(true),
@@ -284,12 +290,13 @@ export default function Studio() {
     [historyTick, historyUpdate] = useState(0),
     file = useRef<HTMLInputElement>(null),
     jsonFile = useRef<HTMLInputElement>(null),
-    drag = useRef<any>(null),
+    drag = useRef<DragState | null>(null),
     current = useRef(pr);
   current.current = pr;
   const slab = pr.slabs.find((s) => s.id === sid) || pr.slabs[0],
     piece = pr.pieces.find((p) => p.id === selected),
-    photoCrop = cropFromCalibration(slab) ?? slab.crop ?? fitPhotoCrop(slab),
+    photoCrop = slabCrop(slab),
+    slabImage = slabImageRect(slab),
     photoCalibration = slab.calibration,
     photoAdjustments = slab.adjustments ?? { straighten: 0, perspectiveV: 0, perspectiveH: 0 },
     warnings = issues(pr),
@@ -326,7 +333,7 @@ export default function Studio() {
   function change(fn: (p: Project) => Project, record = true) {
     if (record) checkpoint();
     setPr((p) => fn(p));
-    setSaved("Unsaved changes");
+    setSaved("dirty");
   }
   function patch(v: Partial<Piece>) {
     if (piece)
@@ -340,9 +347,9 @@ export default function Studio() {
       dst = redo ? past : future;
     const p = src.current.pop();
     if (p) {
-      dst.current.push(pr);
+      dst.current.push(current.current);
       setPr(p);
-      setSaved("Unsaved changes");
+      setSaved("dirty");
       historyUpdate((x) => x + 1);
     }
   }
@@ -373,6 +380,36 @@ export default function Studio() {
     }));
     setSelected(id);
   }
+  function duplicatePiece(source: Piece) {
+    const id = crypto.randomUUID();
+    change((p) => ({
+      ...p,
+      pieces: [
+        ...p.pieces,
+        {
+          ...source,
+          id,
+          name: (source.name + " copy").slice(0, 60),
+          x: source.x + 50,
+          y: source.y + 50,
+          ax: source.ax + 50,
+          ay: source.ay + 50,
+          color: colors[p.pieces.length % colors.length],
+        },
+      ],
+    }));
+    setSelected(id);
+  }
+  function deletePiece(target: Piece) {
+    change((p) => ({
+      ...p,
+      pieces: p.pieces.filter((q) => q.id !== target.id),
+    }));
+    setSelected("");
+    toast(`Deleted “${target.name}”`, {
+      action: { label: "Undo", onClick: () => undo() },
+    });
+  }
   async function save() {
     setBusy(true);
     try {
@@ -386,7 +423,7 @@ export default function Studio() {
       const { id } = (await r.json()) as { id: string };
       setPr((p) => ({ ...p, id }));
       setSaved(
-        current.current === snapshot ? "Saved to projects" : "Unsaved changes",
+        current.current === snapshot ? "saved" : "dirty",
       );
       toast.success("Project saved");
     } catch (e) {
@@ -409,7 +446,7 @@ export default function Studio() {
   }
   async function load(id: string) {
     if (
-      saved === "Unsaved changes" &&
+      saved === "dirty" &&
       !window.confirm("Open this project and discard unsaved changes?")
     )
       return;
@@ -422,7 +459,7 @@ export default function Studio() {
       setPr(p);
       setSid(p.slabs[0].id);
       setSelected(p.pieces[0]?.id || "");
-      setSaved("Saved to projects");
+      setSaved("saved");
       setDialog("");
     } catch (e) {
       toast.error(String(e));
@@ -486,6 +523,10 @@ export default function Studio() {
           photoWidth,
           photoHeight,
           crop,
+          // A new photo invalidates any corner calibration or adjustments
+          // made for the previous one.
+          calibration: undefined,
+          adjustments: undefined,
         };
         return { ...p, slabs: replacement ? p.slabs.map((s) => s.id === sid ? { ...s, ...next } : s) : [...p.slabs, next] };
       });
@@ -547,7 +588,6 @@ export default function Studio() {
   ) {
     e.preventDefault();
     e.stopPropagation();
-    checkpoint();
     setSelected(p.id);
     e.currentTarget.setPointerCapture(e.pointerId);
     const q = point(e);
@@ -557,6 +597,7 @@ export default function Studio() {
       start: q,
       x: assembly ? p.ax : p.x,
       y: assembly ? p.ay : p.y,
+      recorded: false,
     };
   }
   function snapPosition(project: Project, moving: Piece, x: number, y: number) {
@@ -611,6 +652,11 @@ export default function Studio() {
         x = snapped.x;
         y = snapped.y;
       }
+    }
+    if (x === d.x && y === d.y && !d.recorded) return;
+    if (!d.recorded) {
+      checkpoint();
+      d.recorded = true;
     }
     change(
       (p) => ({
@@ -677,16 +723,22 @@ export default function Studio() {
       copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       copy.setAttribute("width", "1800");
       copy.setAttribute("height", String(Math.round((1800 * ah) / aw)));
-      for (const el of Array.from(copy.querySelectorAll("image"))) {
-        const response = await fetch(el.getAttribute("href")!);
+      const embedded = new Map<string, Promise<string>>();
+      const embed = async (href: string) => {
+        const response = await fetch(href);
         if (!response.ok) throw Error("Could not include a slab image.");
         const b = await response.blob();
-        const data = await new Promise<string>((resolve) => {
+        return new Promise<string>((resolve, reject) => {
           const r = new FileReader();
           r.onload = () => resolve(String(r.result));
+          r.onerror = () => reject(Error("Could not include a slab image."));
           r.readAsDataURL(b);
         });
-        el.setAttribute("href", data);
+      };
+      for (const el of Array.from(copy.querySelectorAll("image"))) {
+        const href = el.getAttribute("href")!;
+        if (!embedded.has(href)) embedded.set(href, embed(href));
+        el.setAttribute("href", await embedded.get(href)!);
       }
       download(
         new Blob([new XMLSerializer().serializeToString(copy)], {
@@ -698,6 +750,45 @@ export default function Studio() {
       toast.error(String(e));
     }
   }
+  const shortcut = useRef<(e: KeyboardEvent) => void>(() => {});
+  shortcut.current = (e) => {
+    const mod = e.ctrlKey || e.metaKey,
+      key = e.key.toLowerCase();
+    if (mod && key === "s") {
+      e.preventDefault();
+      if (!busy) save();
+      return;
+    }
+    const target = e.target as HTMLElement | null;
+    if (dialog || target?.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (mod && key === "z") {
+      e.preventDefault();
+      undo(e.shiftKey);
+    } else if (mod && key === "y") {
+      e.preventDefault();
+      undo(true);
+    } else if (mod && key === "d" && piece) {
+      e.preventDefault();
+      duplicatePiece(piece);
+    } else if ((e.key === "Delete" || e.key === "Backspace") && piece && !mod) {
+      e.preventDefault();
+      deletePiece(piece);
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => shortcut.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    if (saved !== "dirty") return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [saved]);
   useEffect(() => {
     const ctx = (document as any).modelContext;
     if (!ctx?.registerTool) return;
@@ -768,7 +859,9 @@ export default function Studio() {
               change((p) => ({ ...p, name: e.target.value.slice(0, 150) }))
             }
           />
-          <span className="save-status">{saved}</span>
+          <span className={"save-status " + saved} role="status">
+            {saveLabels[saved]}
+          </span>
         </div>
         <button className="quiet" onClick={() => setDialog("help")}>
           How it works <ArrowUpRight size={16} />
@@ -823,6 +916,9 @@ export default function Studio() {
             </button>
           </div>
           <div className="piecelist">
+            {!pr.pieces.length && (
+              <p className="empty">No pieces yet. Add one to start planning.</p>
+            )}
             {pr.pieces.map((p, i) => (
               <button
                 key={p.id}
@@ -841,7 +937,7 @@ export default function Studio() {
                     {p.w} × {p.h} mm
                   </small>
                 </span>
-                {warnings.some((w) => w.id === p.id) && (
+                {hasIssue(warnings, p.id) && (
                   <TriangleAlert className="warningicon" size={14} />
                 )}
               </button>
@@ -866,6 +962,7 @@ export default function Studio() {
             <div className="toolicons">
               <button
                 aria-label="Undo"
+                title="Undo (Ctrl+Z)"
                 disabled={!past.current.length}
                 onClick={() => undo()}
               >
@@ -873,6 +970,7 @@ export default function Studio() {
               </button>
               <button
                 aria-label="Redo"
+                title="Redo (Ctrl+Shift+Z)"
                 disabled={!future.current.length}
                 onClick={() => undo(true)}
               >
@@ -880,17 +978,35 @@ export default function Studio() {
               </button>
               <i />
               <button
+                title="Zoom out"
+                aria-label="Zoom out"
+                disabled={zoom <= ZOOM_MIN}
+                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
+              >
+                <ZoomOut />
+              </button>
+              <button
+                className="zoom-readout"
+                title="Reset zoom to 100%"
+                aria-label={"Zoom " + Math.round(zoom * 100) + "%, reset"}
+                onClick={() => setZoom(1)}
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                title="Zoom in"
+                aria-label="Zoom in"
+                disabled={zoom >= ZOOM_MAX}
+                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
+              >
+                <ZoomIn />
+              </button>
+              <button
                 title="Fit view"
                 aria-label="Fit view"
                 onClick={() => setZoom(1)}
               >
                 <Maximize2 />
-              </button>
-              <button
-                title="Zoom in"
-                onClick={() => setZoom((z) => (z === 2 ? 1 : z + 0.25))}
-              >
-                {Math.round(zoom * 100)}%
               </button>
             </div>
           </div>
@@ -930,10 +1046,10 @@ export default function Studio() {
                     <defs><clipPath id={`slab-clip-${slab.id}`}><rect x={0} y={0} width={slab.w} height={slab.h} /></clipPath></defs>
                     <image
                       href={slab.image}
-                      x={-photoCrop.x * slab.w / photoCrop.w}
-                      y={-photoCrop.y * slab.h / photoCrop.h}
-                      width={slab.w / photoCrop.w}
-                      height={slab.h / photoCrop.h}
+                      x={slabImage.x}
+                      y={slabImage.y}
+                      width={slabImage.w}
+                      height={slabImage.h}
                       style={{ transform: photoPerspectiveTransform(photoAdjustments), transformOrigin: "center center", transformBox: "fill-box" }}
                       preserveAspectRatio="none"
                       clipPath={`url(#slab-clip-${slab.id})`}
@@ -964,8 +1080,10 @@ export default function Studio() {
                         </g>
                       ))}
                     {slabPieces.map((p) => {
+                      // Draw the slab footprint: a 90° rotated piece occupies h × w.
                       const f = footprint(p),
-                        hole = opening(p),
+                        slabHole = opening(p, true),
+                        hole = { ...slabHole, x: slabHole.x - p.x, y: slabHole.y - p.y },
                         index = pr.pieces.indexOf(p) + 1;
                       return (
                         <g
@@ -984,12 +1102,12 @@ export default function Studio() {
                           <rect
                             x={0}
                             y={0}
-                            width={p.w}
-                            height={p.h}
+                            width={f.w}
+                            height={f.h}
                             fill={p.color}
                             fillOpacity={selected === p.id ? 0.24 : 0.1}
                             stroke={
-                              warnings.some((w) => w.id === p.id)
+                              hasIssue(warnings, p.id)
                                 ? "#f46d68"
                                 : p.color
                             }
@@ -1012,7 +1130,7 @@ export default function Studio() {
                               <rect
                                 x={18}
                                 y={18}
-                                width={Math.min(p.w - 36, 510)}
+                                width={Math.max(0, Math.min(f.w - 36, 510))}
                                 height={120}
                                 rx={12}
                                 fill="#14201fe8"
@@ -1021,8 +1139,8 @@ export default function Studio() {
                                 {String(index).padStart(2, "0")} · {p.name}
                               </text>
                               <text
-                                x={p.w / 2}
-                                y={p.h - 35}
+                                x={f.w / 2}
+                                y={f.h - 35}
                                 textAnchor="middle"
                                 fontSize={43}
                                 fill="#151c1c"
@@ -1031,15 +1149,16 @@ export default function Studio() {
                                 paintOrder="stroke"
                               >
                                 {p.w} × {p.h}
+                                {p.rot ? " · 90°" : ""}
                               </text>
                             </>
                           )}
                           {selected === p.id &&
                             [
                               [0, 0],
-                              [p.w, 0],
-                              [0, p.h],
-                              [p.w, p.h],
+                              [f.w, 0],
+                              [0, f.h],
+                              [f.w, f.h],
                             ].map(([x, y], i) => (
                               <rect
                                 key={i}
@@ -1145,7 +1264,8 @@ export default function Studio() {
                       />
                       {pr.pieces.map((p, i) => {
                         const s = pr.slabs.find((s) => s.id === p.slab)!,
-                          hole = opening(p);
+                          hole = opening(p),
+                          img = slabImageRect(s);
                         return (
                           <g
                             key={p.id}
@@ -1177,8 +1297,10 @@ export default function Studio() {
                               <rect width={p.w} height={p.h} fill="#42474b" />
                               <image
                                 href={s.image}
-                                width={s.w}
-                                height={s.h}
+                                x={img.x}
+                                y={img.y}
+                                width={img.w}
+                                height={img.h}
                                 preserveAspectRatio="none"
                                 transform={
                                   p.rot
@@ -1446,39 +1568,16 @@ export default function Studio() {
               </p>
               <div className="pieceactions">
                 <button
-                  onClick={() => {
-                    const id = crypto.randomUUID();
-                    change((p) => ({
-                      ...p,
-                      pieces: [
-                        ...p.pieces,
-                        {
-                          ...piece,
-                          id,
-                          name: piece.name + " copy",
-                          x: piece.x + 50,
-                          y: piece.y + 50,
-                          ax: piece.ax + 50,
-                          ay: piece.ay + 50,
-                          color: colors[p.pieces.length % colors.length],
-                        },
-                      ],
-                    }));
-                    setSelected(id);
-                  }}
+                  title="Duplicate piece (Ctrl+D)"
+                  onClick={() => duplicatePiece(piece)}
                 >
                   <Copy size={15} /> Duplicate
                 </button>
                 <button
-                  title="Delete selected piece"
+                  className="danger"
+                  title="Delete piece (Del)"
                   aria-label="Delete selected piece"
-                  onClick={() => {
-                    change((p) => ({
-                      ...p,
-                      pieces: p.pieces.filter((q) => q.id !== piece.id),
-                    }));
-                    setSelected("");
-                  }}
+                  onClick={() => deletePiece(piece)}
                 >
                   <Trash2 size={16} />
                 </button>
@@ -1511,34 +1610,9 @@ export default function Studio() {
       </div>
       <Dialog open={!!dialog} onOpenChange={(o) => !o && setDialog("")}>
         <DialogContent className="studio-dialog">
-          <DialogTitle>
-            {
-              (
-                {
-                  slab: "Slab settings",
-                  projects: "Your projects",
-                  export: "Export project",
-                  checks: "Placement checks",
-                  help: "From slab to finished surface",
-                  defects: "Marked defects",
-                } as any
-              )[dialog]
-            }
-          </DialogTitle>
+          <DialogTitle>{dialog && dialogCopy[dialog].title}</DialogTitle>
           <DialogDescription>
-            {
-              (
-                {
-                  slab: "Use the actual measurements of the photographed slab.",
-                  projects: "Saved projects are available when you return.",
-                  export: "Keep a project file or share the planned layout.",
-                  checks:
-                    "Rectangular placement checks for the current project.",
-                  help: "Plan the pattern before you make the cut.",
-                  defects: "Exclude damaged rectangular areas from this slab.",
-                } as any
-              )[dialog]
-            }
+            {dialog && dialogCopy[dialog].description}
           </DialogDescription>
           {dialog === "slab" && (
             <>
@@ -1599,9 +1673,9 @@ export default function Studio() {
                 )}
               </div>
               <p className="hint">
-                Photo must be cropped edge-to-edge and photographed square to
-                the slab. This version does not correct perspective or irregular
-                edges.
+                For accurate matching, photograph the slab square-on. Use AI
+                isolate and straighten to correct perspective, then confirm the
+                measured width and height.
               </p>
               <button className="primary" onClick={() => setDialog("")}>
                 Apply dimensions
@@ -1634,7 +1708,7 @@ export default function Studio() {
               <button
                 onClick={() => {
                   if (
-                    saved === "Unsaved changes" &&
+                    saved === "dirty" &&
                     !confirm("Discard unsaved changes and start a new project?")
                   )
                     return;
@@ -1645,7 +1719,7 @@ export default function Studio() {
                   setPr(p);
                   setSid("s1");
                   setSelected("");
-                  setSaved("Unsaved project");
+                  setSaved("new");
                   setDialog("");
                 }}
               >
@@ -1688,7 +1762,7 @@ export default function Studio() {
               {warnings.length ? (
                 <ul className="warnings">
                   {warnings.map((w, i) => (
-                    <li key={i}>
+                    <li key={w.id + i}>
                       <TriangleAlert size={17} />
                       {w.text}
                     </li>
@@ -1711,7 +1785,7 @@ export default function Studio() {
           {dialog === "help" && (
             <ol className="help">
               <li>
-                <b>Upload a real slab.</b> Crop the photo to its edges, then
+                <b>Upload a real slab.</b> Straighten it with AI if needed, then
                 enter width, height and thickness in millimetres.
               </li>
               <li>
@@ -1723,15 +1797,26 @@ export default function Studio() {
                 texture change in the assembly preview.
               </li>
               <li>
-                <b>Arrange and review.</b> Drag assembled pieces into place.
-                Check gaps and edges, then save or export.
-              </li>
-              <li>
-                Arrow keys move a focused piece 5 mm; Shift + arrow moves 50 mm.
-                Manual matching, rectangular pieces, and 2D assembly in this
-                version.
+                <b>Arrange and review.</b> Arrange pieces in the 2D or 3D
+                assembly. Check gaps and edges, then save or export.
               </li>
             </ol>
+          )}
+          {dialog === "help" && (
+            <dl className="shortcuts">
+              <dt><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></dt>
+              <dd>Move focused piece 5 mm (Shift: 50 mm)</dd>
+              <dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt>
+              <dd>Undo</dd>
+              <dt><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd></dt>
+              <dd>Redo</dd>
+              <dt><kbd>Ctrl</kbd><kbd>S</kbd></dt>
+              <dd>Save project</dd>
+              <dt><kbd>Ctrl</kbd><kbd>D</kbd></dt>
+              <dd>Duplicate selected piece</dd>
+              <dt><kbd>Del</kbd></dt>
+              <dd>Delete selected piece</dd>
+            </dl>
           )}
           {dialog === "defects" && (
             <>
@@ -1807,7 +1892,7 @@ export default function Studio() {
             const p = JSON.parse(await f.text());
             if (!validProject(p)) throw Error("Invalid project backup.");
             if (
-              saved === "Unsaved changes" &&
+              saved === "dirty" &&
               !confirm("Replace unsaved changes with this backup?")
             )
               return;
@@ -1816,7 +1901,7 @@ export default function Studio() {
             setPr(p);
             setSid(p.slabs[0].id);
             setSelected(p.pieces[0]?.id || "");
-            setSaved("Unsaved changes");
+            setSaved("dirty");
             setDialog("");
             toast.success("Backup opened");
           } catch (e) {

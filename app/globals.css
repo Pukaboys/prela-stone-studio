@@ -167,3 +167,53 @@ body {
 .quad-calibrator{overflow:visible}.quad-calibrator img{object-fit:fill;border-radius:6px}.quad-calibrator svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.quad-handle{position:absolute;width:38px;height:38px;margin:-19px 0 0 -19px;border:3px solid #172024;border-radius:50%;background:#bde96e;color:#172024;font-size:8px;font-weight:800;cursor:grab;touch-action:none;box-shadow:0 2px 8px #000b;z-index:3}.quad-handle:active{cursor:grabbing;background:#fff}.quad-handle span{pointer-events:none}.quad-calibrator:after{content:"DRAG THE 4 CORNERS TO THE SLAB EDGES";position:absolute;left:8px;top:8px;background:#14201fe8;color:#bde96e;font-size:10px;letter-spacing:.08em;padding:5px 7px;pointer-events:none}
 .ai-photo-editor img{object-fit:contain;background:#050909}
 .photo-adjustments{display:grid;gap:8px;margin-top:10px;padding:10px;background:#182125;border:1px solid #354148;border-radius:6px}.photo-adjustments label{display:grid;grid-template-columns:150px 1fr 48px;align-items:center;gap:8px;color:#b8c5bd;font-size:12px}.photo-adjustments input[type=range]{width:100%;padding:0;border:0;background:transparent}.photo-adjustments b{color:#bde96e;font-size:11px;text-align:right}.photo-adjustments button{justify-self:start;font-size:11px;padding:6px 9px}
+
+/* ---------------------------------------------------------------------------
+   Professional polish layer. Kept last so it refines the base rules above.
+   --------------------------------------------------------------------------- */
+:root{--font-ui:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--accent-ok:#bde96e;--accent-warn:#efbc80;--accent-danger:#ff7a72;--line:#354047}
+body{font-family:var(--font-ui);font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;letter-spacing:-.003em}
+::selection{background:#bde96e55;color:#fff}
+*{scrollbar-width:thin;scrollbar-color:#3c4a52 transparent}
+button{font-weight:500;border-radius:7px;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
+button:active:not(:disabled){transform:translateY(.5px)}
+.primary{box-shadow:0 1px 0 #ffffff40 inset,0 1px 2px #0006}
+.topbar{position:sticky;top:0;z-index:20;height:68px;box-shadow:0 1px 0 #0003,0 8px 24px -16px #0008;backdrop-filter:saturate(1.2)}
+.brand b{letter-spacing:.08em}
+.statsbar b,.field input,.slabcard small,.piecelist small,.zoom-readout,.ruler,.piece-number,.panelhead>span{font-variant-numeric:tabular-nums}
+.workgrid{min-height:calc(100vh - 124px)}
+
+/* Save status indicator */
+.save-status{display:inline-flex;align-items:center;gap:7px}
+.save-status:before{content:"";width:7px;height:7px;border-radius:50%;background:#7e8d93}
+.save-status.dirty{color:var(--accent-warn)}.save-status.dirty:before{background:var(--accent-warn);box-shadow:0 0 0 3px #efbc8022}
+.save-status.saved{color:#a9c98a}.save-status.saved:before{background:var(--accent-ok)}
+
+/* Inputs */
+.field>div{transition:border-color .15s,box-shadow .15s}
+.field>div:focus-within{border-color:#7f9b5c;box-shadow:0 0 0 3px #bde96e1f}
+.field>div input:focus-visible{outline:0}
+.field.invalid>div{border-color:var(--accent-danger);box-shadow:0 0 0 3px #ff7a7222}
+.field.invalid>span{color:var(--accent-danger)}
+
+/* Toolbar */
+.toolicons button:hover:not(:disabled){background:#2a353b;color:#e6efe9}
+.zoom-readout{min-width:52px}
+
+/* Destructive action */
+.danger:hover{background:#3a2426;border-color:#7a3a3a;color:var(--accent-danger)}
+
+/* Empty state */
+.empty{font-size:12px;color:#8fa0a8;line-height:1.6;border:1px dashed #3a474e;border-radius:7px;padding:12px;margin:0 0 6px}
+
+/* Keyboard shortcuts in help */
+.shortcuts{display:grid;grid-template-columns:max-content 1fr;gap:10px 16px;align-items:center;margin:4px 0 0;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:#b4c1c7}
+.shortcuts dt{display:flex;gap:4px}.shortcuts dd{margin:0}
+kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;text-align:center;padding:3px 6px;border-radius:5px;border:1px solid #46545c;border-bottom-width:2px;background:#232d33;color:#e3ebe8}
+
+/* Toasts match the studio palette */
+[data-sonner-toast]{font-family:var(--font-ui)!important}
+
+@media(max-width:600px){.topbar{height:62px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media print{.topbar{position:static;box-shadow:none}}
