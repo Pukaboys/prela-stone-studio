@@ -278,7 +278,7 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .pieces-summary em{font-style:normal;font-size:12px;color:#93a4ac}
 .pieces-summary .ok b{color:#bfdc9d;font-size:14px}.pieces-summary .warn b{color:#efbc80;font-size:14px}
 .pieces-table{border:1px solid #354148;border-radius:9px;overflow:auto;background:#1b2328}
-.pieces-row{display:grid;grid-template-columns:62px minmax(150px,1.4fr) minmax(190px,1.3fr) minmax(140px,1fr) 78px 92px minmax(180px,1.2fr) minmax(180px,1.2fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1180px}
+.pieces-row{display:grid;grid-template-columns:62px minmax(150px,1.4fr) minmax(190px,1.3fr) minmax(140px,1fr) 78px 92px minmax(180px,1.2fr) minmax(240px,1.4fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1240px}
 .pieces-row:first-child{border-top:0}
 .pieces-header{background:#202a30;font-size:11.5px;color:#93a4ac;letter-spacing:.02em;padding-top:11px;padding-bottom:11px;position:sticky;top:0;z-index:1}
 .pieces-row:not(.pieces-header):hover{background:#1f292e}
@@ -356,3 +356,30 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
   .pad-rot-row{grid-template-columns:60px 100px 60px}
 }
 @media print{.assembly-pad,.pieces-head-actions,.pc-actions{display:none!important}}
+
+.assembly-download{margin-left:6px;gap:5px}
+.assembly-download svg{width:14px;height:14px}
+
+/* Slab delete */
+.slabcard-wrap{position:relative}
+.slab-delete{position:absolute;right:8px;bottom:17px;padding:5px;border:0;background:transparent;color:#8a9aa2;opacity:.75}
+.slabcard-wrap:hover .slab-delete,.slab-delete:focus-visible{opacity:1}
+.slab-delete:hover{background:#3a2426;color:#ff7a72}
+.dialog-actions{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.dialog-actions .primary{margin-left:auto}
+@media(max-width:600px){.slabcard-wrap{flex-shrink:0}.slab-delete{bottom:12px;opacity:1}}
+
+/* Opening position (distance from edges) */
+.hole-position{display:grid;gap:8px;margin-bottom:10px}
+.hole-position.compact{gap:6px;margin:0}
+.hole-axis{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px;align-items:center}
+.hole-position:not(.compact) .hole-axis{grid-template-columns:1fr}
+.hole-label{font-size:12px;color:#a0b0b9}
+.hole-position:not(.compact) .hole-axis{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"label label" "edge num"}
+.hole-position:not(.compact) .hole-label{grid-area:label}
+.hole-edge{display:grid;grid-template-columns:1fr 1fr;border:1px solid #3a464e;border-radius:7px;overflow:hidden;min-width:112px}
+.hole-edge button{border:0;border-radius:0;padding:7px 8px;font-size:12px;background:transparent}
+.hole-edge button+button{border-left:1px solid #3a464e}
+.hole-edge button[aria-checked=true]{background:#45524b;color:#daf6af}
+.hole-position[aria-disabled=true]{opacity:.55}
+.opening-actions button{font-size:12px}

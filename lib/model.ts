@@ -35,6 +35,9 @@ export type Slab = {
   edit?: PhotoEdit;
 };
 export type CutAngle = 0 | 45;
+export type HoleEdgeX = "left" | "right";
+/** Back is the top edge of the piece in the drawings (wall side); front is the bottom edge. */
+export type HoleEdgeY = "front" | "back";
 export type Piece = {
   id: string;
   name: string;
@@ -53,8 +56,14 @@ export type Piece = {
   cutAngle?: CutAngle;
   holeW: number;
   holeH: number;
+  /** Legacy: opening offset from the piece centre. Used only when holeDX/holeDY are unset. */
   holeX?: number;
   holeY?: number;
+  /** Opening position: distance (mm) from the chosen piece edge to the opening's edge. */
+  holeEdgeX?: HoleEdgeX;
+  holeDX?: number;
+  holeEdgeY?: HoleEdgeY;
+  holeDY?: number;
   color: string;
 };
 export type Defect = {
@@ -196,8 +205,18 @@ export const footprint = (p: Piece) => ({
   h: p.rot ? p.w : p.h,
 });
 export function opening(p: Piece, onSlab = false) {
-  const x = (p.w - p.holeW) / 2 + (p.holeX ?? 0),
-    y = (p.h - p.holeH) / 2 + (p.holeY ?? 0);
+  const x =
+      p.holeDX !== undefined
+        ? p.holeEdgeX === "right"
+          ? p.w - p.holeDX - p.holeW
+          : p.holeDX
+        : (p.w - p.holeW) / 2 + (p.holeX ?? 0),
+    y =
+      p.holeDY !== undefined
+        ? p.holeEdgeY === "back"
+          ? p.holeDY
+          : p.h - p.holeDY - p.holeH
+        : (p.h - p.holeH) / 2 + (p.holeY ?? 0);
   if (!onSlab) return { x, y, w: p.holeW, h: p.holeH };
   return p.rot
     ? { x: p.x + p.h - y - p.holeH, y: p.y + x, w: p.holeH, h: p.holeW }
@@ -242,10 +261,82 @@ export function findFreeSpot(
   return null;
 }
 
+/**
+ * Remove a slab and its defect marks. Its pieces move to the first remaining
+ * slab, each into a free spot, keeping the original piece order. Returns the
+ * project unchanged if it is the only slab.
+ */
+export function removeSlab(pr: Project, slabId: string): Project {
+  const dest = pr.slabs.find((s) => s.id !== slabId);
+  if (!dest) return pr;
+  let next: Project = {
+    ...pr,
+    slabs: pr.slabs.filter((s) => s.id !== slabId),
+    defects: pr.defects.filter((d) => d.slab !== slabId),
+    pieces: pr.pieces.filter((q) => q.slab !== slabId),
+  };
+  for (const q of pr.pieces.filter((q) => q.slab === slabId)) {
+    const f = footprint(q);
+    const spot = findFreeSpot(next, dest.id, f.w, f.h) ?? { x: next.margin, y: next.margin };
+    next = { ...next, pieces: [...next.pieces, { ...q, slab: dest.id, ...spot }] };
+  }
+  const order = new Map(pr.pieces.map((q, i) => [q.id, i]));
+  next.pieces.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+  return next;
+}
+
 export type Issue = { id: string; related?: string; text: string };
 /** True when a placement issue involves the given piece. */
 export const hasIssue = (list: Issue[], id: string) =>
   list.some((w) => w.id === id || w.related === id);
+/**
+ * The opening's position as edge distances, for display and editing. Works
+ * for legacy centre offsets too (edges default to left / front).
+ */
+export function holeDistances(p: Piece) {
+  const o = opening(p);
+  const edgeX: HoleEdgeX = p.holeEdgeX ?? "left",
+    edgeY: HoleEdgeY = p.holeEdgeY ?? "front";
+  return {
+    edgeX,
+    dx: Math.round((edgeX === "right" ? p.w - o.x - o.w : o.x) * 10) / 10,
+    edgeY,
+    dy: Math.round((edgeY === "back" ? o.y : p.h - o.y - o.h) * 10) / 10,
+  };
+}
+
+/** Patch that sets the opening's distance and/or edge, keeping the other axis in place. */
+export function setHoleDistance(
+  p: Piece,
+  change: { edgeX?: HoleEdgeX; dx?: number; edgeY?: HoleEdgeY; dy?: number },
+): Partial<Piece> {
+  const d = holeDistances(p);
+  const o = opening(p);
+  const edgeX = change.edgeX ?? d.edgeX,
+    edgeY = change.edgeY ?? d.edgeY;
+  // Switching edge keeps the opening where it is, so recompute the distance.
+  const dx = change.dx ?? (edgeX === "right" ? p.w - o.x - o.w : o.x);
+  const dy = change.dy ?? (edgeY === "back" ? o.y : p.h - o.y - o.h);
+  const clean = (n: number) => Math.round(n * 10) / 10;
+  return {
+    holeEdgeX: edgeX,
+    holeDX: clean(dx),
+    holeEdgeY: edgeY,
+    holeDY: clean(dy),
+    holeX: undefined,
+    holeY: undefined,
+  };
+}
+
+/** Move the opening in piece coordinates (+x right, +y towards the front). */
+export function nudgeHole(p: Piece, dx: number, dy: number): Partial<Piece> {
+  const d = holeDistances(p);
+  return setHoleDistance(p, {
+    dx: Math.max(0, d.dx + (d.edgeX === "right" ? -dx : dx)),
+    dy: Math.max(0, d.dy + (d.edgeY === "back" ? dy : -dy)),
+  });
+}
+
 export function issues(pr: Project): Issue[] {
   const out: Issue[] = [];
   for (const p of pr.pieces) {
@@ -349,6 +440,11 @@ export function validProject(p: any): p is Project {
         [q.holeX, q.holeY].every(
           (n) =>
             n === undefined || (Number.isFinite(n) && Math.abs(n) <= 20000),
+        ) &&
+        (q.holeEdgeX === undefined || q.holeEdgeX === "left" || q.holeEdgeX === "right") &&
+        (q.holeEdgeY === undefined || q.holeEdgeY === "front" || q.holeEdgeY === "back") &&
+        [q.holeDX, q.holeDY].every(
+          (n) => n === undefined || (Number.isFinite(n) && n >= -20000 && n <= 20000),
         ) &&
         (q.az === undefined ||
           (Number.isFinite(q.az) && q.az >= 0 && q.az <= 50000)) &&

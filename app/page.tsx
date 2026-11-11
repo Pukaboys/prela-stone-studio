@@ -2,8 +2,10 @@
 import { useState, useRef, useEffect } from "react";
 import Assembly3D from "@/components/assembly-3d";
 import Num from "@/components/num-field";
+import HolePosition from "@/components/hole-position";
 import PiecesPage from "@/components/pieces-page";
 import AssemblyPad, { applyDelta } from "@/components/assembly-pad";
+import type { ModelFormat } from "@/lib/export-3d";
 import PhotoEditor, { bakeEdit, type EditSettings } from "@/components/photo-editor";
 import {
   Plus,
@@ -27,6 +29,7 @@ import {
   ZoomIn,
   ZoomOut,
   Crop,
+  Box,
 } from "lucide-react";
 import {
   Dialog,
@@ -46,6 +49,8 @@ import {
   hasIssue,
   pieceGap,
   findFreeSpot,
+  removeSlab,
+  nudgeHole,
   validProject,
   pieceAngle,
   slabCrop,
@@ -247,8 +252,10 @@ export default function Studio() {
           rot: false,
           holeW: 0,
           holeH: 0,
-          holeX: 0,
-          holeY: 0,
+          holeEdgeX: "left",
+          holeDX: 0,
+          holeEdgeY: "front",
+          holeDY: 0,
           color: colors[p.pieces.length % colors.length],
         },
       ],
@@ -282,6 +289,31 @@ export default function Studio() {
       };
     });
     setSelected(id);
+  }
+  /**
+   * Delete a slab and its defect marks. Its pieces are not lost: they move to
+   * the first remaining slab, each into a free spot. The last slab cannot be
+   * deleted because a project needs at least one.
+   */
+  function deleteSlab(target: Slab) {
+    const before = current.current;
+    const rest = before.slabs.filter((s) => s.id !== target.id);
+    if (!rest.length) {
+      toast.error("A project needs at least one slab.");
+      return;
+    }
+    const moving = before.pieces.filter((p) => p.slab === target.id);
+    const question = moving.length
+      ? `Delete slab “${target.name}”?\n\nIts ${moving.length} piece${moving.length > 1 ? "s" : ""} will move to “${rest[0].name}”.`
+      : `Delete slab “${target.name}”?`;
+    if (!window.confirm(question)) return;
+    change((p) => removeSlab(p, target.id));
+    if (sid === target.id) setSid(rest[0].id);
+    if (dialog === "slab" || dialog === "photo") setDialog("");
+    toast(`Deleted slab “${target.name}”`, {
+      description: moving.length ? `${moving.length} piece${moving.length > 1 ? "s" : ""} moved to “${rest[0].name}”.` : undefined,
+      action: { label: "Undo", onClick: () => undo() },
+    });
   }
   /** Patch any piece by id (the inspector's `patch` only edits the selection). */
   function patchPiece(id: string, values: Partial<Piece>, record = true) {
@@ -617,6 +649,22 @@ export default function Studio() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(u), 1000);
   }
+  const fileBase = () =>
+    (pr.name || "prela-assembly")
+      .replace(/[^\p{L}\p{N}]+/gu, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase() || "prela-assembly";
+  async function exportModel(format: ModelFormat) {
+    const id = toast.loading(`Preparing 3D model (.${format})…`);
+    try {
+      const { exportAssembly } = await import("@/lib/export-3d");
+      const blob = await exportAssembly(current.current, format);
+      download(blob, `${fileBase()}.${format}`);
+      toast.success(`3D model downloaded (.${format}, ${(blob.size / 1e6).toFixed(1)} MB)`, { id });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e), { id });
+    }
+  }
   async function exportSvg() {
     try {
       const root = document.getElementById(
@@ -781,21 +829,32 @@ export default function Studio() {
           </div>
           <div className="slablist">
             {pr.slabs.map((s, i) => (
-              <button
-                key={s.id}
-                className={"slabcard " + (slab.id === s.id ? "active" : "")}
-                onClick={() => setSid(s.id)}
-              >
-                <div className="thumb">
-                  <img src={s.image} alt={s.name} />
-                  <span>{String(i + 1).padStart(2, "0")}</span>
-                  {slab.id === s.id && <Check size={16} />}
-                </div>
-                <b>{s.name}</b>
-                <small>
-                  {s.w} × {s.h} × {s.thickness} mm
-                </small>
-              </button>
+              <div key={s.id} className="slabcard-wrap">
+                <button
+                  className={"slabcard " + (slab.id === s.id ? "active" : "")}
+                  onClick={() => setSid(s.id)}
+                >
+                  <div className="thumb">
+                    <img src={s.image} alt={s.name} />
+                    <span>{String(i + 1).padStart(2, "0")}</span>
+                    {slab.id === s.id && <Check size={16} />}
+                  </div>
+                  <b>{s.name}</b>
+                  <small>
+                    {s.w} × {s.h} × {s.thickness} mm
+                  </small>
+                </button>
+                {pr.slabs.length > 1 && (
+                  <button
+                    className="slab-delete danger"
+                    title="Delete slab"
+                    aria-label={`Delete slab ${s.name}`}
+                    onClick={() => deleteSlab(s)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           <button
@@ -1144,6 +1203,14 @@ export default function Studio() {
                     >
                       3D
                     </button>
+                    <button
+                      className="assembly-download"
+                      title="Download 3D model (.glb)"
+                      aria-label="Download 3D model"
+                      onClick={() => exportModel("glb")}
+                    >
+                      <Download size={14} /> 3D file
+                    </button>
                   </div>
                 </div>
                 {assembly3d && (
@@ -1477,49 +1544,34 @@ export default function Studio() {
                   onChange={(holeH) => patch({ holeH })}
                 />
               </div>
-              <div className="twocol">
-                <Num
-                  label="X offset"
-                  value={piece.holeX ?? 0}
-                  min={-20000}
-                  onChange={(holeX) => patch({ holeX })}
-                />
-                <Num
-                  label="Y offset"
-                  value={piece.holeY ?? 0}
-                  min={-20000}
-                  onChange={(holeY) => patch({ holeY })}
-                />
-              </div>
-              <div className="opening-actions">
-                {(["X", "Y"] as const).flatMap((axis) =>
-                  [-1, 1].map((direction) => (
-                    <button
-                      key={axis + direction}
-                      title="Move opening 5 mm; Shift-click for 50 mm"
-                      onClick={(e) => {
-                        const key = axis === "X" ? "holeX" : "holeY";
-                        patch({
-                          [key]: Math.max(
-                            -20000,
-                            Math.min(
-                              20000,
-                              (piece[key] ?? 0) +
-                                direction * (e.shiftKey ? 50 : 5),
-                            ),
-                          ),
-                        });
-                      }}
-                    >
-                      {axis}
-                      {direction > 0 ? "+" : "−"}
-                    </button>
-                  )),
-                )}
+              <HolePosition piece={piece} onPatch={patch} />
+              <div className="opening-actions" role="group" aria-label="Nudge opening">
+                {(
+                  [
+                    ["Left", -1, 0, "←"],
+                    ["Right", 1, 0, "→"],
+                    ["Back", 0, -1, "↑"],
+                    ["Front", 0, 1, "↓"],
+                  ] as const
+                ).map(([name, dx, dy, arrow]) => (
+                  <button
+                    key={name}
+                    title={`Move opening 5 mm towards the ${name.toLowerCase()} (Shift: 50 mm)`}
+                    aria-label={`Move opening towards the ${name.toLowerCase()}`}
+                    disabled={!(piece.holeW > 0 && piece.holeH > 0)}
+                    onClick={(e) => {
+                      const step = e.shiftKey ? 50 : 5;
+                      patch(nudgeHole(piece, dx * step, dy * step));
+                    }}
+                  >
+                    {arrow} {name}
+                  </button>
+                ))}
               </div>
               <p className="hint">
-                Offsets from center: X+ right, X− left, Y+ down, Y− up. Set
-                width and height to 0 for a solid piece.
+                Distances run from the chosen piece edge to the edge of the
+                opening. Back is the top edge in the drawings (wall side), front
+                the bottom edge. Set width and height to 0 for a solid piece.
               </p>
               <div className="pieceactions">
                 <button
@@ -1647,9 +1699,23 @@ export default function Studio() {
                 photo to straighten it and line the frame up with the slab
                 edges, then confirm the measured width and height.
               </p>
-              <button className="primary" onClick={() => setDialog("")}>
-                Apply dimensions
-              </button>
+              <div className="dialog-actions">
+                <button
+                  className="danger"
+                  disabled={pr.slabs.length <= 1}
+                  title={
+                    pr.slabs.length <= 1
+                      ? "A project needs at least one slab"
+                      : "Delete this slab"
+                  }
+                  onClick={() => deleteSlab(slab)}
+                >
+                  <Trash2 size={16} /> Delete slab
+                </button>
+                <button className="primary" onClick={() => setDialog("")}>
+                  Apply dimensions
+                </button>
+              </div>
             </>
           )}
           {dialog === "photo" && (
@@ -1723,6 +1789,12 @@ export default function Studio() {
               <button onClick={() => jsonFile.current?.click()}>
                 <Upload /> Open project backup
               </button>
+              <button onClick={() => exportModel("glb")}>
+                <Box /> Download 3D model (.glb)
+              </button>
+              <button onClick={() => exportModel("usdz")}>
+                <Box /> Download 3D model for iPhone AR (.usdz)
+              </button>
               <button onClick={exportSvg}>
                 <ScanLine /> Download assembly SVG
               </button>
@@ -1730,9 +1802,11 @@ export default function Studio() {
                 <Download /> Print layout / Save PDF
               </button>
               <p className="hint">
-                Project files reference photos stored in this app. Planning
-                layouts only; not machine-ready cutting files. Review dimensions
-                and allowances with your operator.
+                Project files reference photos stored in this app. 3D models
+                are in metres with the slab texture; .glb opens in Windows 3D
+                Viewer, Blender and SketchUp, .usdz in AR on iPhone and iPad.
+                Planning layouts only; not machine-ready cutting files. Review
+                dimensions and allowances with your operator.
               </p>
             </div>
           )}

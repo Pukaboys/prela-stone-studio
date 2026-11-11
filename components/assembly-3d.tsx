@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Project, Piece } from "@/lib/model";
-import { opening, slabCrop } from "@/lib/model";
+import { buildPieceGeometry, applyPiecePose } from "@/lib/piece-mesh";
 
 type Props = {
   project: Project;
@@ -121,54 +121,7 @@ export default function Assembly3D({
       for (const piece of project.pieces) {
         const slab = project.slabs.find((s) => s.id === piece.slab);
         if (!slab) continue;
-        const shape = new THREE.Shape();
-        shape.moveTo(0, 0);
-        shape.lineTo(0, -piece.h);
-        shape.lineTo(piece.w, -piece.h);
-        shape.lineTo(piece.w, 0);
-        shape.closePath();
-        const hole = opening(piece);
-        if (
-          hole.w > 0 &&
-          hole.h > 0 &&
-          hole.x >= 0 &&
-          hole.y >= 0 &&
-          hole.x + hole.w <= piece.w &&
-          hole.y + hole.h <= piece.h
-        ) {
-          const path = new THREE.Path();
-          path.moveTo(hole.x, -hole.y);
-          path.lineTo(hole.x + hole.w, -hole.y);
-          path.lineTo(hole.x + hole.w, -hole.y - hole.h);
-          path.lineTo(hole.x, -hole.y - hole.h);
-          path.closePath();
-          shape.holes.push(path);
-        }
-      const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: slab.thickness,
-        bevelEnabled: piece.cutAngle === 45,
-        bevelSegments: 1,
-        bevelSize: piece.cutAngle === 45 ? Math.min(slab.thickness / 2, 10) : 0,
-        bevelThickness: piece.cutAngle === 45 ? Math.min(slab.thickness / 2, 10) : 0,
-        steps: 1,
-      });
-        const positions = geometry.getAttribute("position"),
-          uv = geometry.getAttribute("uv"),
-          crop = slabCrop(slab);
-        for (let i = 0; i < positions.count; i++) {
-          const x = positions.getX(i),
-            y = -positions.getY(i);
-          const sx = piece.rot ? piece.x + piece.h - y : piece.x + x;
-          const sy = piece.rot ? piece.y + x : piece.y + y;
-          // Map slab millimetres into the cropped region of the photo so the
-          // 3D veins match what the slab layout shows.
-          uv.setXY(
-            i,
-            crop.x + (sx / slab.w) * crop.w,
-            1 - (crop.y + (sy / slab.h) * crop.h),
-          );
-        }
-        uv.needsUpdate = true;
+        const geometry = buildPieceGeometry(THREE, piece, slab);
         geometries.push(geometry);
         const top = new THREE.MeshStandardMaterial({
           map: bySlab.get(slab.id),
@@ -197,25 +150,8 @@ export default function Assembly3D({
         );
         mesh.add(outline);
       }
-      function applyPose(
-        object: InstanceType<typeof THREE.Object3D>,
-        piece: Piece,
-      ) {
-        object.position.set(piece.ax, piece.az ?? 0, piece.ay);
-        const base = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(1, 0, 0),
-          -Math.PI / 2,
-        );
-        const turn = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(
-            THREE.MathUtils.degToRad(piece.rx ?? 0),
-            -THREE.MathUtils.degToRad(piece.rz ?? 0),
-            THREE.MathUtils.degToRad(piece.ry ?? 0),
-            "YXZ",
-          ),
-        );
-        object.quaternion.copy(turn.multiply(base));
-      }
+      const applyPose = (object: InstanceType<typeof THREE.Object3D>, piece: Piece) =>
+        applyPiecePose(THREE, object, piece);
       sync.current = () => {
         for (const object of group.children) {
           const piece = latest.current.project.pieces.find(

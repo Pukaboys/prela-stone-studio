@@ -15,6 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import Num from "@/components/num-field";
+import HolePosition from "@/components/hole-position";
 import { hasIssue, pieceAngle, type Issue, type Piece, type Project } from "@/lib/model";
 
 type Props = {
@@ -113,7 +114,7 @@ export default function PiecesPage({
             <span role="columnheader">Orientation</span>
             <span role="columnheader">Edge cut</span>
             <span role="columnheader">Opening W × H</span>
-            <span role="columnheader">Opening offset X / Y</span>
+            <span role="columnheader">Opening distance from edge</span>
             <span role="columnheader" className="sr-only">
               Actions
             </span>
@@ -193,22 +194,8 @@ export default function PiecesPage({
                   <b aria-hidden>×</b>
                   <Num compact label="Opening height" value={p.holeH} onChange={(holeH) => onPatch(p, { holeH })} />
                 </span>
-                <span role="cell" className="pc-pair" data-label="Opening offset X / Y">
-                  <Num
-                    compact
-                    label="Opening X offset"
-                    value={p.holeX ?? 0}
-                    min={-20000}
-                    onChange={(holeX) => onPatch(p, { holeX })}
-                  />
-                  <b aria-hidden>/</b>
-                  <Num
-                    compact
-                    label="Opening Y offset"
-                    value={p.holeY ?? 0}
-                    min={-20000}
-                    onChange={(holeY) => onPatch(p, { holeY })}
-                  />
+                <span role="cell" data-label="Opening position">
+                  <HolePosition compact piece={p} onPatch={(values) => onPatch(p, values)} />
                 </span>
                 <span role="cell" className="pc-actions">
                   <button title="Show on slab layout" aria-label={`Show ${p.name} on slab layout`} onClick={() => onPlace(p)}>
