@@ -6,6 +6,20 @@ export type PhotoQuad = {
   bl: { x: number; y: number };
 };
 export type PhotoAdjustments = { straighten: number; perspectiveV: number; perspectiveH: number };
+/**
+ * Settings from the photo editor (iPhone-style straighten / perspective /
+ * crop). `source` is the original upload; the slab's `image` is the corrected
+ * photo baked from it, so every view shows the same straightened stone.
+ * `crop` is in the editor's display space (centered, half-size = 1).
+ */
+export type PhotoEdit = {
+  source: string;
+  straighten: number;
+  vertical: number;
+  horizontal: number;
+  crop: PhotoCrop;
+};
+export const EDIT_LIMIT = 45;
 export type Slab = {
   id: string;
   name: string;
@@ -18,6 +32,7 @@ export type Slab = {
   crop?: PhotoCrop;
   calibration?: PhotoQuad;
   adjustments?: PhotoAdjustments;
+  edit?: PhotoEdit;
 };
 export type CutAngle = 0 | 45;
 export type Piece = {
@@ -188,6 +203,45 @@ export function opening(p: Piece, onSlab = false) {
     ? { x: p.x + p.h - y - p.holeH, y: p.y + x, w: p.holeH, h: p.holeW }
     : { x: p.x + x, y: p.y + y, w: p.holeW, h: p.holeH };
 }
+/** Space the magnetic snap leaves between neighbouring pieces on a slab. */
+export const SNAP_GAP = 4;
+/** Gap actually used: never less than the saw blade, so snapped pieces pass checks. */
+export const pieceGap = (pr: Project) => Math.max(SNAP_GAP, pr.kerf);
+
+/**
+ * First free position for a w × h footprint on a slab, keeping the edge trim
+ * and the piece gap. Candidate corners come from the slab margin and the
+ * right/bottom edges of existing pieces (bottom-left packing), scanned
+ * top-to-bottom, left-to-right. Returns null when nothing fits.
+ */
+export function findFreeSpot(
+  pr: Project,
+  slabId: string,
+  w: number,
+  h: number,
+  ignoreId?: string,
+): { x: number; y: number } | null {
+  const slab = pr.slabs.find((s) => s.id === slabId);
+  if (!slab) return null;
+  const gap = pieceGap(pr);
+  const others = pr.pieces
+    .filter((p) => p.slab === slabId && p.id !== ignoreId)
+    .map((p) => ({ x: p.x, y: p.y, ...footprint(p) }));
+  const blocked = pr.defects.filter((d) => d.slab === slabId);
+  const xs = [pr.margin, ...others.map((o) => o.x + o.w + gap)],
+    ys = [pr.margin, ...others.map((o) => o.y + o.h + gap)];
+  const fits = (x: number, y: number) =>
+    x + w <= slab.w - pr.margin &&
+    y + h <= slab.h - pr.margin &&
+    others.every(
+      (o) => x + w + gap <= o.x || o.x + o.w + gap <= x || y + h + gap <= o.y || o.y + o.h + gap <= y,
+    ) &&
+    blocked.every((d) => x + w <= d.x || d.x + d.w <= x || y + h <= d.y || d.y + d.h <= y);
+  for (const y of [...new Set(ys)].sort((a, b) => a - b))
+    for (const x of [...new Set(xs)].sort((a, b) => a - b)) if (fits(x, y)) return { x, y };
+  return null;
+}
+
 export type Issue = { id: string; related?: string; text: string };
 /** True when a placement issue involves the given piece. */
 export const hasIssue = (list: Issue[], id: string) =>
@@ -268,6 +322,19 @@ export function validProject(p: any): p is Project {
         (s.photoHeight === undefined || Number.isFinite(s.photoHeight)) &&
         (s.crop === undefined || [s.crop.x, s.crop.y, s.crop.w, s.crop.h].every((n: number) => Number.isFinite(n) && n >= 0 && n <= 1) && s.crop.w > 0 && s.crop.h > 0) &&
         (s.calibration === undefined || [s.calibration.tl, s.calibration.tr, s.calibration.br, s.calibration.bl].every((p: { x: number; y: number }) => p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1)) &&
+        (s.edit === undefined ||
+          (typeof s.edit === "object" &&
+            typeof s.edit.source === "string" &&
+            /^\/(demo-slab\.png|api\/images\?id=[a-zA-Z0-9-]+)$/.test(s.edit.source) &&
+            [s.edit.straighten, s.edit.vertical, s.edit.horizontal].every(
+              (n: number) => Number.isFinite(n) && Math.abs(n) <= EDIT_LIMIT,
+            ) &&
+            !!s.edit.crop &&
+            [s.edit.crop.x, s.edit.crop.y, s.edit.crop.w, s.edit.crop.h].every(
+              (n: number) => Number.isFinite(n) && Math.abs(n) <= 10,
+            ) &&
+            s.edit.crop.w > 0 &&
+            s.edit.crop.h > 0)) &&
         (s.adjustments === undefined || [s.adjustments.straighten, s.adjustments.perspectiveV, s.adjustments.perspectiveH].every((n: number) => Number.isFinite(n) && Math.abs(n) <= 45)),
     ) &&
     p.pieces.every(

@@ -1,6 +1,10 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import Assembly3D from "@/components/assembly-3d";
+import Num from "@/components/num-field";
+import PiecesPage from "@/components/pieces-page";
+import AssemblyPad, { applyDelta } from "@/components/assembly-pad";
+import PhotoEditor, { bakeEdit, type EditSettings } from "@/components/photo-editor";
 import {
   Plus,
   Upload,
@@ -22,6 +26,7 @@ import {
   SlidersHorizontal,
   ZoomIn,
   ZoomOut,
+  Crop,
 } from "lucide-react";
 import {
   Dialog,
@@ -39,6 +44,8 @@ import {
   opening,
   issues,
   hasIssue,
+  pieceGap,
+  findFreeSpot,
   validProject,
   pieceAngle,
   slabCrop,
@@ -47,73 +54,9 @@ import {
   type Piece,
   type CutAngle,
   type PhotoCrop,
-  type PhotoQuad,
-  type PhotoAdjustments,
   type Defect,
   type Slab,
 } from "@/lib/model";
-/**
- * Numeric field that keeps a local text draft, so users can clear the field
- * and type a new value. Only valid, in-range numbers are committed; the field
- * reverts to the last committed value on blur or Escape.
- */
-function Num({
-  label,
-  value,
-  onChange,
-  min = 0,
-  max = 20000,
-  unit = "mm",
-}: {
-  label: string;
-  value: number;
-  onChange: (n: number) => void;
-  min?: number;
-  max?: number;
-  unit?: string;
-}) {
-  // `draft` is null while the field is not being edited, so it always shows
-  // the committed value; while focused it holds whatever the user typed.
-  const [draft, setDraft] = useState<string | null>(null);
-  const text = draft ?? String(value);
-  const parsed = Number(text);
-  const invalid =
-    draft !== null &&
-    (text.trim() === "" || !Number.isFinite(parsed) || parsed < min || parsed > max);
-  return (
-    <label className={"field" + (invalid ? " invalid" : "")}>
-      <span>{label}</span>
-      <div>
-        <input
-          type="number"
-          inputMode="decimal"
-          min={min}
-          max={max}
-          value={text}
-          aria-invalid={invalid || undefined}
-          title={`${min} – ${max} ${unit}`}
-          onFocus={() => setDraft(String(value))}
-          onChange={(e) => {
-            const next = e.target.value;
-            setDraft(next);
-            const n = Number(next);
-            if (next.trim() !== "" && Number.isFinite(n) && n >= min && n <= max && n !== value)
-              onChange(n);
-          }}
-          onBlur={() => setDraft(null)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") {
-              setDraft(null);
-              e.currentTarget.blur();
-            }
-          }}
-        />
-        <small>{unit}</small>
-      </div>
-    </label>
-  );
-}
 function ZoomBoard({
   zoom,
   children,
@@ -164,73 +107,7 @@ function cropPoint(e: React.PointerEvent<HTMLDivElement>, host: HTMLDivElement) 
   };
 }
 
-type PixelPoint = { x: number; y: number };
-
-function homography(destination: PixelPoint[], source: PixelPoint[]) {
-  const matrix: number[][] = [], values: number[] = [];
-  destination.forEach((p, i) => {
-    const q = source[i];
-    matrix.push([p.x, p.y, 1, 0, 0, 0, -q.x * p.x, -q.x * p.y]); values.push(q.x);
-    matrix.push([0, 0, 0, p.x, p.y, 1, -q.y * p.x, -q.y * p.y]); values.push(q.y);
-  });
-  for (let i = 0; i < 8; i++) {
-    let pivot = i;
-    for (let j = i + 1; j < 8; j++) if (Math.abs(matrix[j][i]) > Math.abs(matrix[pivot][i])) pivot = j;
-    [matrix[i], matrix[pivot]] = [matrix[pivot], matrix[i]]; [values[i], values[pivot]] = [values[pivot], values[i]];
-    const divisor = matrix[i][i];
-    for (let k = i; k < 8; k++) matrix[i][k] /= divisor;
-    values[i] /= divisor;
-    for (let j = 0; j < 8; j++) if (j !== i) {
-      const factor = matrix[j][i];
-      for (let k = i; k < 8; k++) matrix[j][k] -= factor * matrix[i][k];
-      values[j] -= factor * values[i];
-    }
-  }
-  return (p: PixelPoint): PixelPoint => { const d = values[6] * p.x + values[7] * p.y + 1; return { x: (values[0] * p.x + values[1] * p.y + values[2]) / d, y: (values[3] * p.x + values[4] * p.y + values[5]) / d }; };
-}
-
-function triangleTransform(source: PixelPoint[], destination: PixelPoint[]) {
-  const [s0, s1, s2] = source, [d0, d1, d2] = destination;
-  const det = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
-  const coefficient = (v0: number, v1: number, v2: number) => [
-    (v0 * (s1.y - s2.y) + v1 * (s2.y - s0.y) + v2 * (s0.y - s1.y)) / det,
-    (v0 * (s2.x - s1.x) + v1 * (s0.x - s2.x) + v2 * (s1.x - s0.x)) / det,
-    (v0 * (s1.x * s2.y - s2.x * s1.y) + v1 * (s2.x * s0.y - s0.x * s2.y) + v2 * (s0.x * s1.y - s1.x * s0.y)) / det,
-  ];
-  const x = coefficient(d0.x, d1.x, d2.x), y = coefficient(d0.y, d1.y, d2.y);
-  return [x[0], y[0], x[1], y[1], x[2], y[2]] as const;
-}
-
-async function rectifySlabImage(dataUrl: string, calibration: PhotoQuad, slab: Slab) {
-  const image = new Image();
-  image.src = dataUrl;
-  await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(Error("Could not decode the slab photo.")); });
-  const width = 1600, height = Math.max(1, Math.round(width * slab.h / slab.w));
-  const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
-  const ctx = canvas.getContext("2d")!;
-  const source = [calibration.tl, calibration.tr, calibration.br, calibration.bl].map((p) => ({ x: p.x * image.naturalWidth, y: p.y * image.naturalHeight }));
-  const map = homography([{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }], source);
-  const grid = 24;
-  const drawTriangle = (ss: PixelPoint[], dd: PixelPoint[]) => { ctx.save(); ctx.beginPath(); ctx.moveTo(dd[0].x, dd[0].y); ctx.lineTo(dd[1].x, dd[1].y); ctx.lineTo(dd[2].x, dd[2].y); ctx.closePath(); ctx.clip(); ctx.setTransform(...triangleTransform(ss, dd)); ctx.drawImage(image, 0, 0); ctx.restore(); };
-  for (let y = 0; y < grid; y++) for (let x = 0; x < grid; x++) {
-    const d00 = { x: x * width / grid, y: y * height / grid }, d10 = { x: (x + 1) * width / grid, y: y * height / grid }, d11 = { x: (x + 1) * width / grid, y: (y + 1) * height / grid }, d01 = { x: x * width / grid, y: (y + 1) * height / grid };
-    const s00 = map(d00), s10 = map(d10), s11 = map(d11), s01 = map(d01);
-    drawTriangle([s00, s10, s11], [d00, d10, d11]); drawTriangle([s00, s11, s01], [d00, d11, d01]);
-  }
-  return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(Error("Could not create the corrected slab image.")), "image/png"));
-}
-
-function photoPerspectiveTransform(adjustments: PhotoAdjustments) {
-  return `perspective(900px) rotateX(${adjustments.perspectiveV}deg) rotateY(${-adjustments.perspectiveH}deg) rotate(${adjustments.straighten}deg)`;
-}
-
-function AiPhotoEditor({ slab, onAiEdit }: { slab: Slab; onAiEdit: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false);
-  async function edit() { setBusy(true); try { await onAiEdit(); } finally { setBusy(false); } }
-  return <div className="photo-calibrator"><div className="photo-calibrator-canvas ai-photo-editor" style={{ aspectRatio: (slab.photoWidth ?? slab.w) / (slab.photoHeight ?? slab.h) }}><img src={slab.image} alt="Slab source photo" /></div><div className="photo-calibrator-actions"><button className="primary" disabled={busy} onClick={edit}>{busy ? "AI is editing the slab…" : "AI isolate and straighten slab"}</button><span>The original photo will be replaced with a centered, front-facing slab on a transparent background.</span></div><div className="photo-adjustments"><b>AI photo edit</b><span>It removes the background and corrects perspective automatically. No corner calibration is required.</span></div></div>;
-}
-
-function DefectPainter({ slab, crop, calibration, adjustments, defects, onAdd }: { slab: Slab; crop: PhotoCrop; calibration?: PhotoQuad; adjustments?: PhotoAdjustments; defects: Defect[]; onAdd: (defect: Defect) => void }) {
+function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: PhotoCrop; defects: Defect[]; onAdd: (defect: Defect) => void }) {
   const host = useRef<HTMLDivElement>(null), stroke = useRef<{ x: number; y: number }[]>([]), c = crop; const [draft, setDraft] = useState<{ x: number; y: number }[]>([]); const [brush, setBrush] = useState(45);
   function toSlab(e: React.PointerEvent<HTMLDivElement>) { if (!host.current) return { x: 0, y: 0 }; const p = cropPoint(e, host.current); return { x: p.x * slab.w, y: p.y * slab.h }; }
   function begin(e: React.PointerEvent<HTMLDivElement>) { stroke.current = [toSlab(e)]; setDraft(stroke.current); host.current?.setPointerCapture(e.pointerId); }
@@ -238,14 +115,12 @@ function DefectPainter({ slab, crop, calibration, adjustments, defects, onAdd }:
   function finish(e: React.PointerEvent<HTMLDivElement>) { if (stroke.current.length < 2) { stroke.current = []; setDraft([]); return; } const points = stroke.current, xs = points.map((p) => p.x), ys = points.map((p) => p.y); onAdd({ id: crypto.randomUUID(), slab: slab.id, x: Math.min(...xs) - brush / 2, y: Math.min(...ys) - brush / 2, w: Math.max(brush, Math.max(...xs) - Math.min(...xs) + brush), h: Math.max(brush, Math.max(...ys) - Math.min(...ys) + brush), points, brush }); stroke.current = []; setDraft([]); host.current?.releasePointerCapture(e.pointerId); }
   function line(points: { x: number; y: number }[]) { return points.map((p) => `${p.x},${p.y}`).join(" "); }
   const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
-  const a = adjustments ?? { straighten: 0, perspectiveV: 0, perspectiveH: 0 };
-  const imageTransform = photoPerspectiveTransform(a);
-  const calibratedPoints = calibration ? (["tl", "tr", "br", "bl"] as const).map((key) => `${((calibration[key].x - c.x) / c.w) * slab.w},${((calibration[key].y - c.y) / c.h) * slab.h}`).join(" ") : "";
-  return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%`, transform: imageTransform }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{calibratedPoints && <polygon points={calibratedPoints} fill="#bde96e18" stroke="#bde96e" strokeWidth={10} strokeDasharray="28 18" />}{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush. The green outline is the calibrated slab boundary.</p></div>;
+  return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%` }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
 }
-type DialogId = "" | "slab" | "projects" | "export" | "checks" | "help" | "defects";
+type DialogId = "" | "slab" | "photo" | "projects" | "export" | "checks" | "help" | "defects";
 const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
   slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
+  photo: { title: "Adjust slab photo", description: "Straighten, correct perspective and frame the slab edges." },
   projects: { title: "Your projects", description: "Saved projects are available when you return." },
   export: { title: "Export project", description: "Keep a project file or share the planned layout." },
   checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
@@ -275,7 +150,7 @@ export default function Studio() {
   const [pr, setPr] = useState<Project>(demo),
     [sid, setSid] = useState("s1"),
     [selected, setSelected] = useState("p1"),
-    [view, setView] = useState("split"),
+    [view, setView] = useState("pieces"),
     [dialog, setDialog] = useState<DialogId>(""),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState<SaveState>("new"),
@@ -297,8 +172,6 @@ export default function Studio() {
     piece = pr.pieces.find((p) => p.id === selected),
     photoCrop = slabCrop(slab),
     slabImage = slabImageRect(slab),
-    photoCalibration = slab.calibration,
-    photoAdjustments = slab.adjustments ?? { straighten: 0, perspectiveV: 0, perspectiveH: 0 },
     warnings = issues(pr),
     slabPieces = pr.pieces.filter((p) => p.slab === slab.id);
   const used =
@@ -355,7 +228,9 @@ export default function Studio() {
   }
   function addPiece() {
     const id = crypto.randomUUID();
-    change((p) => ({
+    change((p) => {
+      const spot = findFreeSpot(p, slab.id, 800, 600) ?? { x: p.margin, y: p.margin };
+      return {
       ...p,
       pieces: [
         ...p.pieces,
@@ -365,8 +240,8 @@ export default function Studio() {
           slab: slab.id,
           w: 800,
           h: 600,
-          x: pr.margin,
-          y: pr.margin,
+          x: spot.x,
+          y: spot.y,
           ax: 0,
           ay: Math.max(0, ...p.pieces.map((q) => q.ay + q.h + 20)),
           rot: false,
@@ -377,12 +252,19 @@ export default function Studio() {
           color: colors[p.pieces.length % colors.length],
         },
       ],
-    }));
+      };
+    });
     setSelected(id);
   }
   function duplicatePiece(source: Piece) {
     const id = crypto.randomUUID();
-    change((p) => ({
+    change((p) => {
+      const f = footprint(source);
+      const spot = findFreeSpot(p, source.slab, f.w, f.h) ?? {
+        x: source.x + 50,
+        y: source.y + 50,
+      };
+      return {
       ...p,
       pieces: [
         ...p.pieces,
@@ -390,15 +272,34 @@ export default function Studio() {
           ...source,
           id,
           name: (source.name + " copy").slice(0, 60),
-          x: source.x + 50,
-          y: source.y + 50,
+          x: spot.x,
+          y: spot.y,
           ax: source.ax + 50,
           ay: source.ay + 50,
           color: colors[p.pieces.length % colors.length],
         },
       ],
-    }));
+      };
+    });
     setSelected(id);
+  }
+  /** Patch any piece by id (the inspector's `patch` only edits the selection). */
+  function patchPiece(id: string, values: Partial<Piece>, record = true) {
+    change(
+      (p) => ({ ...p, pieces: p.pieces.map((q) => (q.id === id ? { ...q, ...values } : q)) }),
+      record,
+    );
+  }
+  /** Move a piece to another slab, into its first free spot. */
+  function moveToSlab(target: Piece, slabId: string) {
+    const f = footprint(target);
+    const spot = findFreeSpot(current.current, slabId, f.w, f.h, target.id) ?? {
+      x: current.current.margin,
+      y: current.current.margin,
+    };
+    patchPiece(target.id, { slab: slabId, ...spot });
+    setSelected(target.id);
+    setSid(slabId);
   }
   function deletePiece(target: Piece) {
     change((p) => ({
@@ -527,14 +428,15 @@ export default function Studio() {
           // made for the previous one.
           calibration: undefined,
           adjustments: undefined,
+          edit: undefined,
         };
         return { ...p, slabs: replacement ? p.slabs.map((s) => s.id === sid ? { ...s, ...next } : s) : [...p.slabs, next] };
       });
       replacePhoto.current = false;
       setSid(targetId);
-      setDialog("slab");
+      setDialog("photo");
       toast.success(
-        "Photo uploaded. Calibrate the slab dimensions before placing pieces.",
+        "Photo uploaded. Straighten and frame the slab, then confirm its dimensions.",
       );
     } catch (e) {
       toast.error(String(e));
@@ -543,34 +445,40 @@ export default function Studio() {
       if (file.current) file.current.value = "";
     }
   }
-  async function calibrateWithAI() {
+  /** Bake the editor settings into a corrected photo and use it for the slab. */
+  async function applyPhotoEdit(image: HTMLImageElement, settings: EditSettings) {
+    const target = slab;
+    const source = target.edit?.source ?? target.image;
     try {
-      const imageResponse = await fetch(slab.image);
-      const imageBlob = await imageResponse.blob();
-      const imageData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(Error("Could not read the slab image."));
-        reader.readAsDataURL(imageBlob);
+      const baked = await bakeEdit(image, settings, target.w / target.h);
+      const r = await fetch("/api/images", {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg" },
+        body: baked.blob,
       });
-      const response = await fetch("/api/slab-edit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: imageData }) });
-      if (!response.ok) throw Error(await response.text());
-      const result = await response.json() as { image?: string; calibration?: PhotoQuad; fallback?: boolean };
-      const corrected = result.image
-        ? await (await fetch(result.image)).blob()
-        : result.calibration
-          ? await rectifySlabImage(imageData, result.calibration, slab)
-          : (() => { throw Error("AI returned no edited slab image."); })();
-      const correctedBitmap = await createImageBitmap(corrected);
-      const uploadResponse = await fetch("/api/images", { method: "POST", headers: { "Content-Type": "image/png" }, body: corrected });
-      if (!uploadResponse.ok) throw Error(await uploadResponse.text());
-      const uploaded = await uploadResponse.json() as { url: string };
-      const correctedCalibration: PhotoQuad = { tl: { x: 0, y: 0 }, tr: { x: 1, y: 0 }, br: { x: 1, y: 1 }, bl: { x: 0, y: 1 } };
-      change((p) => ({ ...p, slabs: p.slabs.map((s) => s.id === slab.id ? { ...s, image: uploaded.url, photoWidth: correctedBitmap.width, photoHeight: correctedBitmap.height, crop: { x: 0, y: 0, w: 1, h: 1 }, calibration: correctedCalibration, adjustments: { straighten: 0, perspectiveV: 0, perspectiveH: 0 } } : s) }));
-      correctedBitmap.close();
-      toast.success(result.fallback ? "Slab straightened automatically using AI corner detection." : "AI edited the slab: front-facing, centered, and isolated.");
-    } catch (error) {
-      toast.error(String(error));
+      if (!r.ok) throw Error(await r.text());
+      const { url } = (await r.json()) as { url: string };
+      change((p) => ({
+        ...p,
+        slabs: p.slabs.map((s) =>
+          s.id === target.id
+            ? {
+                ...s,
+                image: url,
+                photoWidth: baked.width,
+                photoHeight: baked.height,
+                crop: { x: 0, y: 0, w: 1, h: 1 },
+                calibration: undefined,
+                adjustments: undefined,
+                edit: { source, ...settings },
+              }
+            : s,
+        ),
+      }));
+      setDialog("slab");
+      toast.success("Slab photo straightened and framed.");
+    } catch (e) {
+      toast.error(String(e));
     }
   }
   function point(e: React.PointerEvent<SVGElement>) {
@@ -600,55 +508,51 @@ export default function Studio() {
       recorded: false,
     };
   }
+  /**
+   * Magnetic snap on the slab. Pieces snap to the edge trim, align with a
+   * neighbour's left/right (top/bottom) edge, or sit next to it with exactly
+   * `pieceGap` mm of space (4 mm, or the saw thickness if larger). A snapped
+   * axis keeps its exact value; a free axis rounds to a 5 mm grid.
+   */
   function snapPosition(project: Project, moving: Piece, x: number, y: number) {
     const slab = project.slabs.find((s) => s.id === moving.slab);
-    if (!slab) return { x, y };
+    const grid = (v: number) => Math.max(0, Math.round(v / 5) * 5);
+    if (!slab) return { x: grid(x), y: grid(y) };
     const f = footprint(moving),
-      gap = project.kerf,
-      threshold = Math.max(12, gap * 3),
+      gap = pieceGap(project),
+      threshold = 30,
       xs = [project.margin, slab.w - project.margin - f.w],
       ys = [project.margin, slab.h - project.margin - f.h];
     for (const other of project.pieces) {
       if (other.id === moving.id || other.slab !== moving.slab) continue;
       const o = footprint(other);
-      xs.push(
-        other.x,
-        other.x + o.w,
-        other.x + o.w + gap,
-        other.x - f.w - gap,
-        other.x + o.w - f.w,
-      );
-      ys.push(
-        other.y,
-        other.y + o.h,
-        other.y + o.h + gap,
-        other.y - f.h - gap,
-        other.y + o.h - f.h,
-      );
+      xs.push(other.x, other.x + o.w - f.w, other.x + o.w + gap, other.x - f.w - gap);
+      ys.push(other.y, other.y + o.h - f.h, other.y + o.h + gap, other.y - f.h - gap);
     }
-    const nearest = (value: number, candidates: number[]) => {
-      const candidate = candidates.reduce(
-        (best, current) =>
-          Math.abs(current - value) < Math.abs(best - value) ? current : best,
-        candidates[0],
-      );
-      return Math.abs(candidate - value) <= threshold ? candidate : value;
+    const snap = (value: number, candidates: number[]) => {
+      let best = value,
+        distance = threshold;
+      for (const c of candidates)
+        if (c >= 0 && Math.abs(c - value) <= distance) {
+          best = c;
+          distance = Math.abs(c - value);
+        }
+      return distance < threshold || best !== value ? best : grid(value);
     };
-    return {
-      x: Math.max(0, Math.round(nearest(x, xs) / 5) * 5),
-      y: Math.max(0, Math.round(nearest(y, ys) / 5) * 5),
-    };
+    return { x: snap(x, xs), y: snap(y, ys) };
   }
   function move(e: React.PointerEvent<SVGElement>) {
     if (!drag.current) return;
     const d = drag.current,
       q = point(e);
-    let x = Math.max(0, Math.round((d.x + q.x - d.start.x) / 5) * 5),
-      y = Math.max(0, Math.round((d.y + q.y - d.start.y) / 5) * 5);
+    const rawX = d.x + q.x - d.start.x,
+      rawY = d.y + q.y - d.start.y;
+    let x = Math.max(0, Math.round(rawX / 5) * 5),
+      y = Math.max(0, Math.round(rawY / 5) * 5);
     if (!d.assembly) {
       const moving = current.current.pieces.find((p) => p.id === d.id);
       if (moving) {
-        const snapped = snapPosition(current.current, moving, x, y);
+        const snapped = snapPosition(current.current, moving, rawX, rawY);
         x = snapped.x;
         y = snapped.y;
       }
@@ -954,9 +858,10 @@ export default function Studio() {
           <div className="toolbar">
             <Tabs value={view} onValueChange={setView}>
               <TabsList>
+                <TabsTrigger value="pieces">1 · Pieces</TabsTrigger>
+                <TabsTrigger value="slab">2 · Slab layout</TabsTrigger>
+                <TabsTrigger value="assembly">3 · Assembly</TabsTrigger>
                 <TabsTrigger value="split">Split view</TabsTrigger>
-                <TabsTrigger value="slab">Slab layout</TabsTrigger>
-                <TabsTrigger value="assembly">Assembly</TabsTrigger>
               </TabsList>
             </Tabs>
             <div className="toolicons">
@@ -976,6 +881,8 @@ export default function Studio() {
               >
                 <Redo2 />
               </button>
+              {view !== "pieces" && (
+              <>
               <i />
               <button
                 title="Zoom out"
@@ -1008,14 +915,42 @@ export default function Studio() {
               >
                 <Maximize2 />
               </button>
+              </>
+              )}
             </div>
           </div>
+          {view === "pieces" ? (
+            <PiecesPage
+              project={pr}
+              selected={selected}
+              warnings={warnings}
+              onSelect={(p) => {
+                setSelected(p.id);
+                setSid(p.slab);
+              }}
+              onPatch={(p, values) => patchPiece(p.id, values)}
+              onMoveToSlab={moveToSlab}
+              onAdd={addPiece}
+              onDuplicate={duplicatePiece}
+              onDelete={deletePiece}
+              onPlace={(p) => {
+                setSelected(p.id);
+                setSid(p.slab);
+                setView("slab");
+              }}
+              onContinue={() => {
+                if (piece) setSid(piece.slab);
+                setView("slab");
+              }}
+            />
+          ) : (
+          <>
           <div className={"canvases " + view}>
             {view !== "assembly" && (
               <section className="canvaspanel">
                 <div className="canvashead">
                   <h2>
-                    <span className="sectionno">01</span> Slab layout
+                    <span className="sectionno">02</span> Slab layout
                   </h2>
                   <button className="quiet" onClick={() => setDialog("slab")}>
                     <SlidersHorizontal size={15} /> Slab settings
@@ -1050,7 +985,6 @@ export default function Studio() {
                       y={slabImage.y}
                       width={slabImage.w}
                       height={slabImage.h}
-                      style={{ transform: photoPerspectiveTransform(photoAdjustments), transformOrigin: "center center", transformBox: "fill-box" }}
                       preserveAspectRatio="none"
                       clipPath={`url(#slab-clip-${slab.id})`}
                     />
@@ -1179,7 +1113,7 @@ export default function Studio() {
                 <div className="canvascaption">
                   <span>
                     <Move size={14} /> Drag a piece to explore the veins ·
-                    magnetic snap {pr.kerf} mm
+                    magnetic snap leaves {pieceGap(pr)} mm between pieces
                   </span>
                   <span>
                     {slab.w} × {slab.h} mm
@@ -1191,7 +1125,7 @@ export default function Studio() {
               <section className="canvaspanel assemblypanel">
                 <div className="canvashead">
                   <h2>
-                    <span className="sectionno">02</span> Assembly preview
+                    <span className="sectionno">03</span> Assembly preview
                   </h2>
                   <div
                     className="assembly-view-toggle"
@@ -1352,6 +1286,27 @@ export default function Studio() {
                     </button>
                   )}
                 </div>
+                <AssemblyPad
+                  pieces={pr.pieces}
+                  piece={piece}
+                  onSelect={(id) => {
+                    const p = pr.pieces.find((q) => q.id === id);
+                    if (!p) return;
+                    setSelected(id);
+                    setSid(p.slab);
+                  }}
+                  onBegin={checkpoint}
+                  onDelta={(id, delta) =>
+                    change(
+                      (p) => ({
+                        ...p,
+                        pieces: p.pieces.map((q) => (q.id === id ? { ...q, ...applyDelta(q, delta) } : q)),
+                      }),
+                      false,
+                    )
+                  }
+                  onReset={(id) => patchPiece(id, { rx: 0, ry: 0, rz: 0 })}
+                />
               </section>
             )}
           </div>
@@ -1395,6 +1350,8 @@ export default function Studio() {
               ? "Illustrative demo texture. Upload your actual slab before planning a job."
               : "Photo mapped to your entered dimensions. Confirm scale and measurements before cutting."}
           </p>
+          </>
+          )}
         </section>
         <aside className="inspector">
           <div className="panelhead">
@@ -1431,9 +1388,7 @@ export default function Studio() {
               {piece.slab !== slab.id && (
                 <button
                   className="fullbutton"
-                  onClick={() =>
-                    patch({ slab: slab.id, x: pr.margin, y: pr.margin })
-                  }
+                  onClick={() => moveToSlab(piece, slab.id)}
                 >
                   Move to selected slab
                 </button>
@@ -1609,7 +1564,9 @@ export default function Studio() {
         </aside>
       </div>
       <Dialog open={!!dialog} onOpenChange={(o) => !o && setDialog("")}>
-        <DialogContent className="studio-dialog">
+        <DialogContent
+          className={"studio-dialog" + (dialog === "photo" ? " photo-dialog" : "")}
+        >
           <DialogTitle>{dialog && dialogCopy[dialog].title}</DialogTitle>
           <DialogDescription>
             {dialog && dialogCopy[dialog].description}
@@ -1648,13 +1605,26 @@ export default function Studio() {
                   />
                 ))}
               </div>
-              <AiPhotoEditor slab={slab} onAiEdit={calibrateWithAI} />
+              <div className="photo-entry">
+                <div className="photo-entry-thumb">
+                  <img src={slab.image} alt={slab.name} />
+                </div>
+                <div>
+                  <b>Slab photo</b>
+                  <p className="hint">
+                    {slab.edit
+                      ? `Straighten ${slab.edit.straighten.toFixed(1)}° · vertical ${slab.edit.vertical.toFixed(1)}° · horizontal ${slab.edit.horizontal.toFixed(1)}°`
+                      : "Straighten the photo, fix perspective and frame the slab edges."}
+                  </p>
+                  <button className="primary" onClick={() => setDialog("photo")}>
+                    <Crop size={16} /> Adjust photo
+                  </button>
+                </div>
+              </div>
               <h3>Paint slab defects</h3>
               <DefectPainter
                 slab={slab}
                 crop={photoCrop}
-                calibration={photoCalibration}
-                adjustments={photoAdjustments}
                 defects={pr.defects.filter((d) => d.slab === slab.id)}
                 onAdd={(defect) => change((p) => ({ ...p, defects: [...p.defects, defect] }))}
               />
@@ -1673,14 +1643,23 @@ export default function Studio() {
                 )}
               </div>
               <p className="hint">
-                For accurate matching, photograph the slab square-on. Use AI
-                isolate and straighten to correct perspective, then confirm the
-                measured width and height.
+                For accurate matching, photograph the whole slab. Use Adjust
+                photo to straighten it and line the frame up with the slab
+                edges, then confirm the measured width and height.
               </p>
               <button className="primary" onClick={() => setDialog("")}>
                 Apply dimensions
               </button>
             </>
+          )}
+          {dialog === "photo" && (
+            <PhotoEditor
+              key={slab.id + (slab.edit?.source ?? slab.image)}
+              src={slab.edit?.source ?? slab.image}
+              initial={slab.edit}
+              onCancel={() => setDialog("slab")}
+              onApply={applyPhotoEdit}
+            />
           )}
           {dialog === "projects" && (
             <>
@@ -1785,8 +1764,8 @@ export default function Studio() {
           {dialog === "help" && (
             <ol className="help">
               <li>
-                <b>Upload a real slab.</b> Straighten it with AI if needed, then
-                enter width, height and thickness in millimetres.
+                <b>Upload a real slab.</b> Straighten it and frame its edges,
+                then enter width, height and thickness in millimetres.
               </li>
               <li>
                 <b>Create your pieces.</b> Set their size and rectangular
