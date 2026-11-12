@@ -12,12 +12,12 @@
  */
 import { getSetting } from "@/lib/storage";
 
-const COOKIE = "prela_session";
+const COOKIE = "jeo_session";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 const enc = new TextEncoder();
 
 async function hmac(key: string, data: string) {
-  const k = await crypto.subtle.importKey("raw", enc.encode("prela-session-v1:" + key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const k = await crypto.subtle.importKey("raw", enc.encode("jeo-session-v1:" + key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(data)));
   return Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("");
 }

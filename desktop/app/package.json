@@ -1,9 +1,9 @@
 {
-  "name": "prela-stone-studio",
-  "productName": "Prela Stone Studio",
+  "name": "jeo-stone-studio",
+  "productName": "Jeo Stone Studio",
   "version": "1.0.0",
-  "description": "Slab planning and vein matching for Prela Mermer.",
-  "author": "Prela Mermer",
+  "description": "Slab planning, vein matching and cut lists for stone fabricators.",
+  "author": "Jeo Stone Studio",
   "main": "main.cjs",
   "private": true
 }

@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Prela Stone Studio · Slab planning & vein matching",
+  title: "Jeo Stone Studio · Slab planning & vein matching",
   description:
     "Plan marble slab cuts, match veins across assembled pieces, and review the finished surface in 2D and 3D before cutting.",
-  applicationName: "Prela Stone Studio",
+  applicationName: "Jeo Stone Studio",
   other: {
     "codex-preview": "development",
   },

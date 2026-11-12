@@ -1,10 +1,10 @@
-// Prela Stone Studio — desktop shell (Electron main process).
+// Jeo Stone Studio — desktop shell (Electron main process).
 //
 // The desktop app runs the same Node.js server as the website (vinext
 // standalone build), privately on 127.0.0.1, and shows it in a window.
 // Projects and slab photos are stored on this computer in
-//   Windows: %APPDATA%\Prela Stone Studio\data
-//   macOS:   ~/Library/Application Support/Prela Stone Studio/data
+//   Windows: %APPDATA%\Jeo Stone Studio\data
+//   macOS:   ~/Library/Application Support/Jeo Stone Studio/data
 "use strict";
 
 const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
@@ -22,13 +22,27 @@ const serverDir = app.isPackaged
   : path.join(__dirname, "..", "..", "dist", "standalone");
 
 // The smoke test must never write into the user's real projects folder.
-if (process.env.PRELA_SMOKE_TEST === "1")
-  app.setPath("userData", path.join(require("node:os").tmpdir(), `prela-smoke-${Date.now()}`));
+if (process.env.JEO_SMOKE_TEST === "1")
+  app.setPath("userData", path.join(require("node:os").tmpdir(), `jeo-smoke-${Date.now()}`));
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let mainWindow = null;
 let baseUrl = "";
+
+/**
+ * Before the rename the app was "Prela Stone Studio" and kept its data in
+ * that app-data folder. Copy it into the new folder once so nothing is lost.
+ */
+function migrateOldData(dataDir) {
+  const fs = require("node:fs");
+  const old = path.join(app.getPath("appData"), "Prela Stone Studio", "data");
+  try {
+    if (fs.existsSync(old) && !fs.existsSync(dataDir)) fs.cpSync(old, dataDir, { recursive: true });
+  } catch (error) {
+    console.error("Could not copy data from the old app folder", error);
+  }
+}
 
 /** A free localhost port, preferring a fixed one so the app's origin is stable. */
 function findPort(preferred) {
@@ -65,8 +79,9 @@ async function startServer() {
   process.env.HOST = "127.0.0.1";
   process.env.NODE_ENV = "production";
   process.env.DATA_DIR = path.join(app.getPath("userData"), "data");
+  migrateOldData(process.env.DATA_DIR);
   // Enables desktop-only features in the server (website sync).
-  process.env.PRELA_DESKTOP = "1";
+  process.env.JEO_DESKTOP = "1";
   // server.js reads PORT/HOST and starts listening when imported.
   await import(pathToFileURL(path.join(serverDir, "server.js")).href);
   baseUrl = `http://127.0.0.1:${port}`;
@@ -83,7 +98,7 @@ function createWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 640,
-    title: "Prela Stone Studio",
+    title: "Jeo Stone Studio",
     backgroundColor: "#141a1e",
     show: false,
     autoHideMenuBar: !isMac,
@@ -113,7 +128,10 @@ function createWindow() {
 }
 
 // ---------------------------------------------------------------- updates
-const RELEASES = "https://api.github.com/repos/Pukaboys/prela-stone-studio/releases/latest";
+// GitHub repository with the releases (update if the repository is renamed;
+// GitHub also redirects the old name).
+const REPO = "Pukaboys/prela-stone-studio";
+const RELEASES = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 /** Compare "1.2.3" style versions: >0 when a is newer than b. */
 function compareVersions(a, b) {
@@ -142,7 +160,7 @@ async function checkForUpdates(manual = false) {
         buttons: ["Download", "Later"],
         defaultId: 0,
         cancelId: 1,
-        message: `Prela Stone Studio ${latest} is available`,
+        message: `Jeo Stone Studio ${latest} is available`,
         detail: `You have version ${app.getVersion()}. The download page opens in your browser; install it over this version — your projects stay.`,
       });
       if (response === 0) shell.openExternal(release.html_url);
@@ -181,7 +199,7 @@ function buildMenu() {
       role: "help",
       submenu: [
         { label: "Check for Updates…", click: () => checkForUpdates(true) },
-        { label: "Releases on GitHub", click: () => shell.openExternal("https://github.com/Pukaboys/prela-stone-studio/releases") },
+        { label: "Releases on GitHub", click: () => shell.openExternal(`https://github.com/${REPO}/releases`) },
         { type: "separator" },
         { label: `Version ${app.getVersion()}`, enabled: false },
       ],
@@ -205,7 +223,7 @@ app.on("activate", () => {
 });
 
 /**
- * `PRELA_SMOKE_TEST=1`: start the server, load the studio in a hidden window,
+ * `JEO_SMOKE_TEST=1`: start the server, load the studio in a hidden window,
  * print what rendered and whether saving works, then quit. Used to verify a
  * build without opening a window.
  */
@@ -233,13 +251,13 @@ app.whenReady().then(async () => {
   buildMenu();
   try {
     await startServer();
-    if (process.env.PRELA_SMOKE_TEST === "1") return smokeTest();
+    if (process.env.JEO_SMOKE_TEST === "1") return smokeTest();
     createWindow();
     // Quietly look for a newer release a few seconds after start.
     setTimeout(() => checkForUpdates(false), 5000);
   } catch (error) {
     dialog.showErrorBox(
-      "Prela Stone Studio could not start",
+      "Jeo Stone Studio could not start",
       `${error instanceof Error ? error.message : String(error)}\n\nServer folder: ${serverDir}`,
     );
     app.quit();

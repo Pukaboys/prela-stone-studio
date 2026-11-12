@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 // The API handlers store files under DATA_DIR on Node; use a throwaway folder.
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "prela-auth-test-"));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "jeo-auth-test-"));
 const session = await import("@/app/api/session/route");
 const projects = await import("@/app/api/projects/route");
 

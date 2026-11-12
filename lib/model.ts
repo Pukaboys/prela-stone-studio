@@ -34,6 +34,8 @@ export type PhotoEdit = {
   vertical: number;
   horizontal: number;
   crop: PhotoCrop;
+  /** Four-corner perspective correction (0..1 of the original photo). */
+  quad?: { tl: { x: number; y: number }; tr: { x: number; y: number }; br: { x: number; y: number }; bl: { x: number; y: number } };
 };
 export const EDIT_LIMIT = 45;
 export type Slab = {
@@ -597,7 +599,9 @@ function validSlab(s: unknown) {
       (isObj(edit) &&
         isPhoto(edit.source) &&
         [edit.straighten, edit.vertical, edit.horizontal].every((n) => num(n, -EDIT_LIMIT, EDIT_LIMIT)) &&
-        isCrop(edit.crop, -10, 10))) &&
+        isCrop(edit.crop, -10, 10) &&
+        (edit.quad === undefined ||
+          (isObj(edit.quad) && [edit.quad.tl, edit.quad.tr, edit.quad.br, edit.quad.bl].every((q) => isPt(q, -0.5, 1.5)))))) &&
     (adj === undefined || (isObj(adj) && [adj.straighten, adj.perspectiveV, adj.perspectiveH].every((n) => num(n, -45, 45)))) &&
     (s.mirror === undefined || typeof s.mirror === "boolean")
   );

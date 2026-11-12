@@ -1,10 +1,10 @@
-# Prela Stone Studio — source download
+# Jeo Stone Studio — source
 
-Browser-based slab layout and vein-matching app for Prela Mermer.
+Slab layout, vein matching and cut lists for stone fabricators (website and desktop app).
 
 ## Run locally
 
-Install Node.js 22.13 or newer and pnpm, extract the ZIP, then open a terminal in the prela-stone-studio folder:
+Install Node.js 22.13 or newer and pnpm, extract the ZIP, then open a terminal in the project folder:
 
     pnpm install --frozen-lockfile
     pnpm dev
@@ -37,15 +37,15 @@ The desktop app is the same studio wrapped in Electron. It runs the studio
 server privately on the computer (127.0.0.1) and works offline. Projects and
 slab photos are stored in:
 
-- Windows: `%APPDATA%\Prela Stone Studio\data`
-- macOS: `~/Library/Application Support/Prela Stone Studio/data`
+- Windows: `%APPDATA%\Jeo Stone Studio\data`
+- macOS: `~/Library/Application Support/Jeo Stone Studio/data`
 
 (File → Open Data Folder in the app opens it.)
 
 Commands:
 
     pnpm desktop        # build and open the desktop app (development)
-    pnpm desktop:win    # Windows installer → release/Prela Stone Studio Setup <version>.exe
+    pnpm desktop:win    # Windows installer → release/Jeo Stone Studio Setup <version>.exe
     pnpm desktop:mac    # macOS .dmg (must run on a Mac)
 
 Mac installers are built by GitHub: Actions → "Desktop installers" → Run

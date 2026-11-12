@@ -23,6 +23,7 @@ import SignIn from "@/components/sign-in";
 import QuotePanel from "@/components/quote-panel";
 import SyncPanel from "@/components/sync-panel";
 import ShapeThumb from "@/components/shape-thumb";
+import PerspectiveEditor from "@/components/perspective-editor";
 import EdgeCutsEditor from "@/components/edge-cuts";
 import ShapeEditor from "@/components/shape-editor";
 import ShapeScanner, { type ScannedShape } from "@/components/shape-scanner";
@@ -113,6 +114,8 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
     [selected, setSelected] = useState("p1"),
     [view, setView] = useState("pieces"),
     [dialog, setDialog] = useState<DialogId>(""),
+    // Slab photo correction: four corners (perspective) or dials + crop.
+    [photoMode, setPhotoMode] = useState<"corners" | "dials">("corners"),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState<SaveState>("new"),
     [projects, setProjects] = useState<ProjectSummary[]>([]),
@@ -475,9 +478,10 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
       });
       replacePhoto.current = false;
       setSid(targetId);
+      setPhotoMode("corners");
       setDialog("photo");
       toast.success(
-        "Photo uploaded. Straighten and frame the slab, then confirm its dimensions.",
+        "Photo uploaded. Check the slab corners, then confirm its dimensions.",
       );
     } catch (e) {
       toast.error(String(e));
@@ -659,10 +663,10 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
     setTimeout(() => URL.revokeObjectURL(u), 1000);
   }
   const fileBase = () =>
-    (pr.name || "prela-assembly")
+    (pr.name || "jeo-assembly")
       .replace(/[^\p{L}\p{N}]+/gu, "-")
       .replace(/^-|-$/g, "")
-      .toLowerCase() || "prela-assembly";
+      .toLowerCase() || "jeo-assembly";
   /** Backup file with the slab photos embedded, so it opens in any copy of the studio. */
   async function exportBackup() {
     const id = toast.loading("Preparing backup with slab photos…");
@@ -717,7 +721,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
         new Blob([new XMLSerializer().serializeToString(copy)], {
           type: "image/svg+xml",
         }),
-        "prela-assembly.svg",
+        "jeo-assembly.svg",
       );
     } catch (e) {
       toast.error(String(e));
@@ -837,7 +841,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
           </span>
           <div>
             <b>
-              PRELA<span> STONE STUDIO</span>
+              JEO<span> STONE STUDIO</span>
             </b>
             <small>Slab planning & vein matching</small>
           </div>
@@ -978,7 +982,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
             <Plus size={16} /> Add piece
           </button>
           <div className="sidebarfoot">
-            PRELA MERMER <span>Planning studio · build {BUILD.date} · {BUILD.commit}</span>
+            JEO STONE STUDIO <span>Planning studio · build {BUILD.date} · {BUILD.commit}</span>
           </div>
         </aside>
         <section className="workspace">
@@ -1464,7 +1468,13 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                       ? `Straighten ${slab.edit.straighten.toFixed(1)}° · vertical ${slab.edit.vertical.toFixed(1)}° · horizontal ${slab.edit.horizontal.toFixed(1)}°`
                       : "Straighten the photo, fix perspective and frame the slab edges."}
                   </p>
-                  <button className="primary" onClick={() => setDialog("photo")}>
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setPhotoMode(slab.edit && !slab.edit.quad ? "dials" : "corners");
+                      setDialog("photo");
+                    }}
+                  >
                     <Crop size={16} /> Adjust photo
                   </button>
                 </div>
@@ -1575,13 +1585,34 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
             <ShapeScanner multiple onCancel={() => setDialog("")} onUse={addScannedPieces} />
           )}
           {dialog === "photo" && (
-            <PhotoEditor
-              key={slab.id + (slab.edit?.source ?? slab.image)}
-              src={slab.edit?.source ?? slab.image}
-              initial={slab.edit}
-              onCancel={() => setDialog("slab")}
-              onApply={applyPhotoEdit}
-            />
+            <>
+              <div className="photo-modes" role="tablist" aria-label="Correction">
+                <button role="tab" aria-selected={photoMode === "corners"} onClick={() => setPhotoMode("corners")}>
+                  Corners (perspective)
+                </button>
+                <button role="tab" aria-selected={photoMode === "dials"} onClick={() => setPhotoMode("dials")}>
+                  Straighten &amp; crop
+                </button>
+              </div>
+              {photoMode === "corners" ? (
+                <PerspectiveEditor
+                  key={"q" + slab.id + (slab.edit?.source ?? slab.image)}
+                  src={slab.edit?.source ?? slab.image}
+                  initialQuad={slab.edit?.quad}
+                  slabAspect={slab.w / slab.h}
+                  onCancel={() => setDialog("slab")}
+                  onApply={applyPhotoEdit}
+                />
+              ) : (
+                <PhotoEditor
+                  key={slab.id + (slab.edit?.source ?? slab.image)}
+                  src={slab.edit?.source ?? slab.image}
+                  initial={slab.edit?.quad ? undefined : slab.edit}
+                  onCancel={() => setDialog("slab")}
+                  onApply={applyPhotoEdit}
+                />
+              )}
+            </>
           )}
           {dialog === "projects" && (
             <>

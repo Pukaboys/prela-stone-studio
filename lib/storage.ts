@@ -3,7 +3,8 @@
  *
  * - On Cloudflare, objects go to the R2 bucket bound as `BUCKET`.
  * - On Node.js (e.g. Hostinger), objects are written to the filesystem under
- *   `DATA_DIR` (default: `~/prela-stone-studio-data`). Keep this outside the
+ *   `DATA_DIR` (default: `~/jeo-stone-studio-data`; an existing
+ *   `~/prela-stone-studio-data` from before the rename keeps being used). Keep this outside the
  *   deployed app folder so redeploys do not wipe saved projects and photos.
  *
  * `cloudflare:workers` is imported dynamically: Node cannot load that URL
@@ -79,9 +80,12 @@ async function fileStore(): Promise<ObjectStore> {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
   const os = await import("node:os");
-  const root = path.resolve(
-    process.env.DATA_DIR || path.join(os.homedir(), "prela-stone-studio-data"),
-  );
+  const fsSync = await import("node:fs");
+  const fresh = path.join(os.homedir(), "jeo-stone-studio-data");
+  const legacy = path.join(os.homedir(), "prela-stone-studio-data");
+  // Keep using the folder from before the rename so saved projects stay.
+  const fallback = !fsSync.existsSync(fresh) && fsSync.existsSync(legacy) ? legacy : fresh;
+  const root = path.resolve(process.env.DATA_DIR || fallback);
   const resolve = (key: string) => {
     const file = path.resolve(root, key);
     if (!file.startsWith(root + path.sep)) throw Error("Invalid storage key");

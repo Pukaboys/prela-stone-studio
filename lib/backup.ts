@@ -8,18 +8,20 @@
  * backup uploads the photos into the current copy and rewrites the links.
  *
  * File format (version 2):
- *   { format: "prela-stone-studio-backup", version: 2, exportedAt,
+ *   { format: "jeo-stone-studio-backup", version: 2, exportedAt,
  *     project: Project, images: { "<original url>": "data:image/…;base64,…" } }
  * Older backups (a bare Project) still open; their photos are reported as
  * missing if this copy does not have them.
  */
 import { validProject, type Project } from "@/lib/model";
 
-const FORMAT = "prela-stone-studio-backup";
+const FORMAT = "jeo-stone-studio-backup";
+/** Backups made before the rename are still read. */
+const FORMATS = [FORMAT, "prela-stone-studio-backup"];
 const STORED = /^\/api\/images\?id=[a-zA-Z0-9-]+$/;
 
 type BackupFile = {
-  format: typeof FORMAT;
+  format: string;
   version: 2;
   exportedAt: string;
   project: Project;
@@ -95,7 +97,7 @@ export async function restoreBackup(text: string): Promise<{ project: Project; m
   } catch {
     throw Error("This file is not a project backup.");
   }
-  const isBackup = !!data && typeof data === "object" && (data as BackupFile).format === FORMAT;
+  const isBackup = !!data && typeof data === "object" && FORMATS.includes((data as BackupFile).format);
   const project = (isBackup ? (data as BackupFile).project : data) as Project;
   const images = isBackup ? ((data as BackupFile).images ?? {}) : {};
   if (!validProject(project)) throw Error("Invalid project backup.");

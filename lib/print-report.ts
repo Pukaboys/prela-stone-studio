@@ -102,7 +102,7 @@ export function reportHtml(pr: Project, opts: { quote?: Pricing } = {}) {
   td small { color: #555; } .n { text-align: right; white-space: nowrap; } .muted { color: #777; }
   .quote { break-before: page; page-break-before: always; } .quote table { max-width: 160mm; } tfoot td { font-weight: 600; } tr.total td { font-size: 13px; border-top: 2px solid #111; }
 </style></head><body>
-<header><h1>PRELA STONE STUDIO · ${esc(pr.name)}</h1><span>${date} · ${pr.pieces.length} pieces · ${pr.slabs.length} slab${pr.slabs.length === 1 ? "" : "s"} · planning document, confirm on site</span></header>
+<header><h1>JEO STONE STUDIO · ${esc(pr.name)}</h1><span>${date} · ${pr.pieces.length} pieces · ${pr.slabs.length} slab${pr.slabs.length === 1 ? "" : "s"} · planning document, confirm on site</span></header>
 ${slabs}${quoteHtml}
 </body></html>`;
 }

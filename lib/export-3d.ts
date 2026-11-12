@@ -37,7 +37,7 @@ export async function exportAssembly(project: Project, format: ModelFormat): Pro
 
   const scene = new THREE.Scene();
   const root = new THREE.Group();
-  root.name = project.name || "Prela assembly";
+  root.name = project.name || "Jeo Stone Studio assembly";
   root.scale.setScalar(0.001); // mm → m
   scene.add(root);
 

@@ -1,7 +1,7 @@
 # Builds the desktop installers on GitHub's machines:
-#   Windows → Prela Stone Studio Setup <version>.exe
-#   macOS   → Prela Stone Studio-<version>-arm64.dmg (Apple Silicon)
-#             Prela Stone Studio-<version>-x64.dmg   (Intel)
+#   Windows → Jeo Stone Studio Setup <version>.exe
+#   macOS   → Jeo Stone Studio-<version>-arm64.dmg (Apple Silicon)
+#             Jeo Stone Studio-<version>-x64.dmg   (Intel)
 #
 # Run it from GitHub → Actions → "Desktop installers" → Run workflow, then
 # download the files under "Artifacts". Pushing a tag like v1.0.1 also
@@ -75,7 +75,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Prela-Stone-Studio-${{ runner.os }}
+          name: Jeo-Stone-Studio-${{ runner.os }}
           path: |
             release/*.exe
             release/*.dmg

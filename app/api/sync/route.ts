@@ -6,7 +6,7 @@
  * (never the password) in its data folder. Projects travel with their slab
  * photos; the project ID is kept, so uploading again updates the same copy.
  *
- * Disabled unless PRELA_DESKTOP=1 (set by the desktop app), so the public
+ * Disabled unless JEO_DESKTOP=1 (set by the desktop app), so the public
  * website cannot be used to make requests to other servers.
  */
 import { validProject, type Project } from "@/lib/model";
@@ -17,7 +17,7 @@ const STORED = /^\/api\/images\?id=([a-zA-Z0-9-]+)$/;
 type Settings = { url: string; cookie: string; connectedAt: string };
 
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
-const available = () => typeof process !== "undefined" && process.env.PRELA_DESKTOP === "1";
+const available = () => typeof process !== "undefined" && process.env.JEO_DESKTOP === "1";
 
 async function readJson<T>(store: ObjectStore, key: string): Promise<T | null> {
   const obj = await store.get(key);

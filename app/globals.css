@@ -221,7 +221,7 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 /* ---------------------------------------------------------------------------
    Slab photo editor (iPhone-style straighten / perspective / crop)
    --------------------------------------------------------------------------- */
-.studio-dialog.photo-dialog{max-width:min(860px,calc(100% - 1.5rem))!important;width:100%;background:#0e1113;border-color:#262d31;padding:18px 18px 14px;max-height:94vh}
+.studio-dialog.photo-dialog{max-width:min(1080px,calc(100% - 1.5rem))!important;width:100%;background:#0e1113;border-color:#262d31;padding:18px 18px 14px;max-height:94vh}
 .photo-dialog>[data-slot=dialog-title],.photo-dialog>[data-slot=dialog-description]{text-align:center;margin:0 40px}
 .photo-dialog [data-slot=dialog-description]{font-size:12px;color:#8e9aa0}
 .pe{display:flex;flex-direction:column;gap:12px;--dial-bg:#2a2d30;--pe-yellow:#ffd60a}
@@ -566,3 +566,20 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
   .canvashead-actions{justify-content:flex-start;gap:10px}
 }
 @media(max-width:1100px){.pieces-row>.pc-pair[data-label]::before{grid-column:1/-1}}
+
+/* Four-corner perspective editor */
+.photo-modes{display:inline-grid;grid-template-columns:1fr 1fr;border:1px solid #3a464e;border-radius:9px;overflow:hidden;justify-self:start;margin-bottom:4px}
+.photo-modes button{border:0;border-radius:0;padding:8px 14px;font-size:13px;background:transparent;color:#c6d0d3}
+.photo-modes button[aria-selected=true]{background:var(--pe-yellow,#ffd60a);color:#1b1b1b}
+.persp{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:16px}
+.persp-stage{position:relative;height:min(62vh,560px);min-height:300px;background:#050607;border-radius:10px;overflow:hidden;touch-action:none;user-select:none}
+.persp-stage canvas{display:block}
+.persp-handle{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:3px solid #14201f;background:#bde96e;box-shadow:0 0 0 2px #bde96e66,0 3px 10px #000a;pointer-events:none}
+.persp-handle.active{background:#fff}
+.persp-side{display:flex;flex-direction:column;gap:12px}
+.persp-status{margin:0;font-size:13px;line-height:1.5;color:#dbe6d0}
+.persp-preview{display:grid;gap:6px}.persp-preview small{color:#93a4ac;font-size:12px}
+.persp-preview canvas{width:100%;height:auto;border-radius:6px;border:1px solid #33414a;background:#2a3236}
+.persp-tools{display:flex;flex-wrap:wrap;gap:8px}
+.persp-side .dialog-actions{margin-top:auto}
+@media(max-width:760px){.persp{grid-template-columns:1fr}.persp-stage{height:52vh}}

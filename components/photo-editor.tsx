@@ -13,12 +13,16 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EDIT_LIMIT, type PhotoCrop } from "@/lib/model";
+import { squareToQuad, type Quad } from "@/lib/perspective";
 
 export type EditSettings = {
   straighten: number;
   vertical: number;
   horizontal: number;
   crop: PhotoCrop;
+  /** Four slab corners (0..1 of the photo): when set, the photo is corrected
+   * by perspective so this outline becomes the whole slab. */
+  quad?: Quad;
 };
 type Pt = { x: number; y: number };
 type Mat = number[]; // 3×3, row-major
@@ -168,9 +172,17 @@ export async function bakeEdit(
   ctx.imageSmoothingQuality = "high";
   ctx.fillStyle = "#2a3236";
   ctx.fillRect(0, 0, width, height);
-  const inv = invert(editMatrix(e, image.naturalWidth, image.naturalHeight));
-  const toSource = (p: Pt) =>
-    apply(inv, { x: e.crop.x + (p.x / width) * e.crop.w, y: e.crop.y + (p.y / height) * e.crop.h });
+  let toSource: (p: Pt) => Pt;
+  if (e.quad) {
+    // Four-corner perspective correction: the outline becomes the full slab.
+    const W = image.naturalWidth, H = image.naturalHeight, q = e.quad;
+    const px = (p: Pt) => ({ x: p.x * W, y: p.y * H });
+    const map = squareToQuad({ tl: px(q.tl), tr: px(q.tr), br: px(q.br), bl: px(q.bl) });
+    toSource = (p) => map(p.x / width, p.y / height);
+  } else {
+    const inv = invert(editMatrix(e, image.naturalWidth, image.naturalHeight));
+    toSource = (p) => apply(inv, { x: e.crop.x + (p.x / width) * e.crop.w, y: e.crop.y + (p.y / height) * e.crop.h });
+  }
   drawWarped(ctx, image, 1, { x: 0, y: 0, w: width, h: height }, toSource, 32, new DOMMatrix());
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(Error("Could not create the corrected photo."))), "image/jpeg", 0.92),

@@ -32,7 +32,7 @@ export default function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           <LockKeyhole size={22} />
         </span>
         <h1>
-          PRELA <span>STONE STUDIO</span>
+          JEO <span>STONE STUDIO</span>
         </h1>
         <p>Enter the team password to open the studio.</p>
         <label className="field">
