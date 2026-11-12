@@ -41,7 +41,8 @@ function Customer({ row, onChange, onError }: { row: Row; onChange: (r: Row) => 
         <b>{row.name || row.email}</b>
         {row.name && <small>{row.email}</small>}
         <small>
-          Joined {fmtDate(row.createdAt)} · {row.devices.length} of {l.maxDevices} computers
+          Joined {fmtDate(row.createdAt)} · {row.devices.length} of {l.maxDevices} computers · {row.browsers.length} of {row.maxBrowsers} browsers
+          {row.browsers.length > 0 && ` (${row.browsers.map((b) => b.name).join(", ")})`}
         </small>
       </div>
       <div className={l.active ? "status-ok" : "status-bad"}>
@@ -82,6 +83,16 @@ function Customer({ row, onChange, onError }: { row: Row; onChange: (r: Row) => 
             onClick={() => run({ action: "end" }, `End the licence of ${row.email} now? The studio locks for them.`)}
           >
             End now
+          </button>
+        )}
+        {row.browsers.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={busy}
+            onClick={() => run({ action: "signout" }, `Sign ${row.email} out of every browser? They can then sign in again.`)}
+          >
+            Sign out browsers
           </button>
         )}
       </form>

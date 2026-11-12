@@ -1,8 +1,8 @@
-import { checkPassword, clientIp, fail, findByEmail, forgive, limited, publicAccount, sameOriginJson, sessionCookie } from "@/lib/accounts";
+import { AccountError, checkPassword, clientIp, fail, findByEmail, forgive, limited, publicAccount, sameOriginJson, startSession } from "@/lib/accounts";
 import { body, err, ok } from "@/lib/http";
 import { isDesktop } from "@/lib/studio-access";
 
-/** Sign in with email and password. */
+/** Sign in with email and password (refused when the account is already open in the maximum number of browsers). */
 export async function POST(req: Request) {
   if (isDesktop()) return err(404, "Sign in on the website.");
   if (!sameOriginJson(req)) return err(400, "Bad request.");
@@ -19,5 +19,11 @@ export async function POST(req: Request) {
     return err(401, "Wrong email or password.");
   }
   forgive(key);
-  return ok({ account: publicAccount(a) }, { "Set-Cookie": await sessionCookie(req, a) });
+  try {
+    const cookie = await startSession(req, a);
+    return ok({ account: publicAccount(a) }, { "Set-Cookie": cookie });
+  } catch (e) {
+    if (e instanceof AccountError) return err(409, e.message);
+    throw e;
+  }
 }

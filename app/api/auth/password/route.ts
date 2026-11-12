@@ -1,4 +1,4 @@
-import { checkPassword, currentAccount, passwordProblem, sameOriginJson, sessionCookie, setPassword } from "@/lib/accounts";
+import { checkPassword, currentAccount, passwordProblem, sameOriginJson, setPassword, startSession } from "@/lib/accounts";
 import { body, err, ok } from "@/lib/http";
 
 /** Change the password (signs out every other session). */
@@ -11,5 +11,5 @@ export async function POST(req: Request) {
   const problem = passwordProblem(String(b.next ?? ""));
   if (problem) return err(400, problem);
   await setPassword(a, String(b.next));
-  return ok({ changed: true }, { "Set-Cookie": await sessionCookie(req, a) });
+  return ok({ changed: true }, { "Set-Cookie": await startSession(req, a) });
 }

@@ -6,7 +6,8 @@ import { isOwner } from "@/lib/studio-access";
 /**
  * Owner only (ADMIN_EMAIL): list customers and switch on licences after they
  * pay. GET lists accounts; POST { accountId, action: "grant", plan, amount, note }
- * adds a paid plan, POST { accountId, action: "end" } ends the licence now.
+ * adds a paid plan, { action: "end" } ends the licence now, { action:
+ * "signout" } signs the customer out of every browser.
  */
 async function owner(req: Request): Promise<Account | Response> {
   const a = await currentAccount(req);
@@ -41,6 +42,11 @@ export async function POST(req: Request) {
   }
   if (b.action === "end") {
     a.licence = { ...a.licence, expiresAt: new Date().toISOString() };
+    await saveAccount(a);
+    return ok({ account: { ...publicAccount(a), createdAt: a.createdAt } });
+  }
+  if (b.action === "signout") {
+    a.sessions = [];
     await saveAccount(a);
     return ok({ account: { ...publicAccount(a), createdAt: a.createdAt } });
   }

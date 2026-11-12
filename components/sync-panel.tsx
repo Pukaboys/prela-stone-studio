@@ -1,12 +1,13 @@
 "use client";
 /**
- * Website sync, shown in the desktop app's Projects window: connect to the
- * website once, upload the open project, or download website projects.
+ * Website sync, shown in the desktop app's Projects window: upload the open
+ * project to the online studio, or download projects from it. Uses the
+ * account this computer is signed in with.
  */
 import { useEffect, useState } from "react";
-import { CloudDownload, CloudUpload, Link2, Unlink } from "lucide-react";
+import { CloudDownload, CloudUpload } from "lucide-react";
 
-type Status = { available: boolean; connected?: boolean; url?: string | null };
+type Status = { available: boolean; connected?: boolean; url?: string | null; email?: string | null };
 type Remote = { id: string; name: string; updated: string };
 
 async function call(body: object) {
@@ -28,9 +29,6 @@ export default function SyncPanel({
   notify: (kind: "success" | "error", text: string) => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
-  const [url, setUrl] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [remote, setRemote] = useState<Remote[] | null>(null);
   const [busy, setBusy] = useState("");
 
@@ -58,51 +56,11 @@ export default function SyncPanel({
     <section className="sync">
       <h3>Website sync</h3>
       {!status.connected ? (
-        <form
-          className="sync-connect"
-          onSubmit={(e) => {
-            e.preventDefault();
-            run("connect", async () => {
-              const r = await call({ action: "connect", url, email, password });
-              setPassword("");
-              setStatus({ available: true, connected: true, url: r.url as string });
-              notify("success", "Connected to the website.");
-            });
-          }}
-        >
-          <label className="field">
-            <span>Website address</span>
-            <input type="url" placeholder="https://your-site.example" value={url} onChange={(e) => setUrl(e.target.value)} required />
-          </label>
-          <label className="field">
-            <span>Account email</span>
-            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-          <button className="primary" disabled={!!busy || !url}>
-            <Link2 size={15} /> {busy === "connect" ? "Connecting…" : "Connect"}
-          </button>
-          <p className="hint">Your password is used once to sign in; only the session is kept on this computer.</p>
-        </form>
+        <p className="hint">Sign in to the app with your account to upload projects to the online studio.</p>
       ) : (
         <>
           <p className="sync-status">
-            Connected to <b>{status.url}</b>
-            <button
-              className="quiet"
-              onClick={() =>
-                run("disconnect", async () => {
-                  await call({ action: "disconnect" });
-                  setStatus({ available: true, connected: false });
-                  setRemote(null);
-                })
-              }
-            >
-              <Unlink size={14} /> Disconnect
-            </button>
+            Online studio of <b>{status.email ?? "your account"}</b>
           </p>
           <div className="sync-actions">
             <button

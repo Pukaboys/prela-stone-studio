@@ -66,12 +66,21 @@ customer out. Plans do not renew by themselves. (Online payment is not built
 in; an earlier PayPal checkout is in the git history.)
 
 - Online studio (/studio): needs a signed-in account with an active licence.
-  Each account only sees its own projects.
+  Each account only sees its own projects. One account can be signed in on
+  at most 2 browsers at a time (MAX_BROWSERS in lib/plans.ts); a third
+  sign-in is refused until one browser signs out (My account → Browsers). A
+  browser unused for 7 days gives up its place. On /admin you can sign a
+  customer out of every browser.
 - Desktop app: on first start it asks for the website email and password and
   activates that computer. The licence is a signed token stored on the
-  computer, so the app works offline; it refreshes daily when online and
-  stops after 30 days without contact or when the licence ends. Customers can
-  remove a computer on My account.
+  computer. When online the app checks the subscription on every start and
+  every few hours (renewals, plan changes, removed computers). Offline it
+  keeps full use for 7 days since the last check (OFFLINE_GRACE_DAYS in
+  lib/licence-token.ts); after that, or when the licence has ended, it runs
+  in limited mode: projects can be opened and viewed, but adding pieces,
+  saving, slab photos, exports and downloads are switched off until a check
+  succeeds ("Check again"). Customers can remove a computer on My account.
+  Website sync uses the computer's licence, not a browser place.
 - Downloads: put the installers and a manifest in the data folder under
   downloads/ (see lib/downloads.ts). Only accounts with an active licence can
   download; /api/app-version tells the desktop app about updates.

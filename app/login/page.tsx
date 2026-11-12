@@ -23,6 +23,7 @@ export default function Login() {
     Promise.resolve().then(() => {
       if (q.get("mode") === "signup") setMode("signup");
       setNext(safeNext(q.get("next")));
+      if (q.get("signedout")) setError("This browser was signed out from another browser or by a password change. Sign in again.");
     });
     fetch("/api/auth/me", { cache: "no-store" })
       .then((r) => r.json() as Promise<{ account: unknown }>)

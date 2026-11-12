@@ -3,17 +3,35 @@
  * Who may open the studio.
  * Website:     signed in with an active trial or plan (otherwise → sign in,
  *              or the account page to renew).
- * Desktop app: a valid licence on this computer (otherwise → activation).
+ * Desktop app: signed in on this computer (otherwise → sign-in screen). With
+ *              a valid licence everything works; when the licence ended or
+ *              the app was offline for too long it opens in limited mode
+ *              (view only). The licence is checked again every few hours.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { KeyRound, LockKeyhole } from "lucide-react";
 
+export type DesktopLicence = {
+  ok: boolean;
+  /** Signed in, but the licence ended or the app was offline too long: view only. */
+  limited: boolean;
+  reason: string | null;
+  email: string | null;
+  plan: string | null;
+  expiresAt: string | null;
+  lastCheck: string | null;
+  offlineDaysLeft: number;
+  /** Result of the last check-in attempt (null: none was needed). */
+  online: boolean | null;
+  server: string;
+};
 export type StudioUser =
   | { mode: "web"; email: string; plan: string; daysLeft: number }
-  | { mode: "desktop"; email: string | null; plan: string | null; expiresAt: string | null; server: string };
+  | ({ mode: "desktop"; recheck: () => Promise<void> } & DesktopLicence);
+
+const RECHECK_MS = 2 * 3600e3;
 
 type Me = { desktop: boolean; account: { email: string; licence: { active: boolean; plan: string; daysLeft: number } } | null };
-type DesktopLicence = { ok: boolean; reason: string | null; email: string | null; plan: string | null; expiresAt: string | null; server: string };
 
 const REASON: Record<string, string> = {
   missing: "Sign in with your Jeo Stone Studio account to activate this computer.",
@@ -102,6 +120,16 @@ export default function StudioGate({ children }: { children: (user: StudioUser) 
     | { kind: "expired"; email: string }
   >({ kind: "loading" });
 
+  // Desktop: full use, limited mode, or the sign-in screen.
+  const checkDesktop = useCallback(async (force = false) => {
+    const lic = (await (await fetch("/api/desktop/licence" + (force ? "?check=1" : ""), { cache: "no-store" })).json()) as DesktopLicence;
+    setState(
+      lic.ok || lic.limited
+        ? { kind: "ready", user: { mode: "desktop", ...lic, recheck: () => checkDesktop(true) } }
+        : { kind: "activate", licence: lic },
+    );
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -109,9 +137,7 @@ export default function StudioGate({ children }: { children: (user: StudioUser) 
         const me = (await (await fetch("/api/auth/me", { cache: "no-store" })).json()) as Me;
         if (cancelled) return;
         if (me.desktop) {
-          const lic = (await (await fetch("/api/desktop/licence", { cache: "no-store" })).json()) as DesktopLicence;
-          if (cancelled) return;
-          setState(lic.ok ? { kind: "ready", user: { mode: "desktop", ...lic } } : { kind: "activate", licence: lic });
+          if (!cancelled) await checkDesktop();
           return;
         }
         if (!me.account) {
@@ -131,11 +157,36 @@ export default function StudioGate({ children }: { children: (user: StudioUser) 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [checkDesktop]);
+
+  // Desktop: check the licence again every few hours while the app is open.
+  const desktop = state.kind === "ready" && state.user.mode === "desktop";
+  useEffect(() => {
+    if (!desktop) return;
+    const t = setInterval(() => checkDesktop().catch(() => undefined), RECHECK_MS);
+    return () => clearInterval(t);
+  }, [desktop, checkDesktop]);
+
+  // Online: if this browser is signed out elsewhere (My account → Browsers,
+  // password change), the next studio request gets 401 → back to sign in.
+  const web = state.kind === "ready" && state.user.mode === "web";
+  useEffect(() => {
+    if (!web) return;
+    const original = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await original(...args);
+      const url = typeof args[0] === "string" ? args[0] : args[0] instanceof Request ? args[0].url : String(args[0]);
+      if (res.status === 401 && /\/api\/(projects|images)/.test(url)) window.location.href = "/login?next=/studio&signedout=1";
+      return res;
+    };
+    return () => {
+      window.fetch = original;
+    };
+  }, [web]);
 
   if (state.kind === "loading") return <main className="studio" aria-busy="true" />;
   if (state.kind === "activate")
-    return <Activate licence={state.licence} onDone={(l) => setState({ kind: "ready", user: { mode: "desktop", ...l } })} />;
+    return <Activate licence={state.licence} onDone={() => checkDesktop()} />;
   if (state.kind === "expired")
     return (
       <Shell>

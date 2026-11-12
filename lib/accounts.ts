@@ -2,18 +2,22 @@
  * Customer accounts, sessions and licences (website server).
  *
  * - Passwords: scrypt with a per-account salt; only the hash is stored.
- * - Sessions: HttpOnly, SameSite=Lax, Secure cookie "<accountId>.<expiry>.<HMAC>"
+ * - Sessions: HttpOnly, SameSite=Lax, Secure cookie "<accountId>.<sessionId>.<expiry>.<HMAC>"
  *   signed with a server secret (SESSION_SECRET, or one generated and kept in
- *   the data folder). Changing the password ends every other session.
+ *   the data folder). Each signed-in browser is listed on the account; at most
+ *   MAX_BROWSERS at once, a further sign-in is refused. Changing the password
+ *   signs out every other browser.
  * - Licence: trial on sign-up, extended by the owner on the admin page after
  *   the customer pays (bank transfer, cash...); the
  *   desktop app is activated on a limited number of devices.
  * - Storage: the same object store as projects (files on Hostinger).
  */
-import { CURRENCY, TRIAL_DAYS, TRIAL_DEVICES, planById, type PlanId } from "@/lib/plans";
+import { BROWSER_IDLE_DAYS, CURRENCY, MAX_BROWSERS, TRIAL_DAYS, TRIAL_DEVICES, planById, type PlanId } from "@/lib/plans";
 import { getSetting, getStore } from "@/lib/storage";
 
 export type Device = { id: string; name: string; activatedAt: string; lastSeen: string };
+/** A signed-in browser. */
+export type WebSession = { id: string; name: string; createdAt: string; lastSeen: string };
 export type Payment = { orderId: string; plan: PlanId; amount: string; currency: string; at: string; note?: string };
 export type Account = {
   id: string;
@@ -26,6 +30,8 @@ export type Account = {
   createdAt: string;
   licence: { plan: PlanId | "trial"; expiresAt: string; devices: Device[] };
   payments: Payment[];
+  /** Signed-in browsers (at most MAX_BROWSERS). */
+  sessions?: WebSession[];
 };
 export type PublicAccount = {
   id: string;
@@ -34,6 +40,8 @@ export type PublicAccount = {
   licence: LicenceStatus;
   devices: Device[];
   payments: Payment[];
+  browsers: (WebSession & { current: boolean })[];
+  maxBrowsers: number;
 };
 export type LicenceStatus = { plan: PlanId | "trial"; active: boolean; expiresAt: string; daysLeft: number; maxDevices: number };
 
@@ -148,10 +156,12 @@ export async function checkPassword(account: Account, password: string) {
   return same(await scrypt(password, account.salt), account.hash);
 }
 
+/** New password; signs out every browser (the caller then signs this one in again). */
 export async function setPassword(account: Account, password: string) {
   account.salt = hex(crypto.getRandomValues(new Uint8Array(16)));
   account.hash = await scrypt(password, account.salt);
   account.sessionVersion += 1;
+  account.sessions = [];
   await saveAccount(account);
 }
 
@@ -193,17 +203,90 @@ export async function listAccounts(): Promise<Account[]> {
   return all.filter((a): a is Account => !!a).sort((x, y) => y.createdAt.localeCompare(x.createdAt));
 }
 
-export function publicAccount(a: Account): PublicAccount {
-  return { id: a.id, email: a.email, name: a.name, licence: licenceStatus(a), devices: a.licence.devices, payments: a.payments };
+export function publicAccount(a: Account, currentSessionId?: string | null): PublicAccount {
+  return {
+    id: a.id,
+    email: a.email,
+    name: a.name,
+    licence: licenceStatus(a),
+    devices: a.licence.devices,
+    payments: a.payments,
+    browsers: (a.sessions ?? []).map((s) => ({ ...s, current: s.id === currentSessionId })),
+    maxBrowsers: MAX_BROWSERS,
+  };
 }
 
 // ---------------------------------------------------------------- sessions
 const secure = (req: Request) => new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+const SESSION_MS = SESSION_DAYS * 864e5;
+const daysSince = (iso: string) => (Date.now() - new Date(iso).getTime()) / 864e5;
+function whenText(iso: string) {
+  const d = Math.floor(daysSince(iso));
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
+}
 
-export async function sessionCookie(req: Request, a: Account) {
-  const exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400;
-  const body = `${a.id}.${a.sessionVersion}.${exp}`;
+/** "Chrome on Windows", from the browser's user agent. */
+export function browserName(ua: string | null) {
+  const u = ua ?? "";
+  const browser = /Edg\//.test(u)
+    ? "Edge"
+    : /OPR\//.test(u)
+      ? "Opera"
+      : /Firefox\//.test(u)
+        ? "Firefox"
+        : /Chrome\//.test(u)
+          ? "Chrome"
+          : /Safari\//.test(u)
+            ? "Safari"
+            : "Browser";
+  const os = /iPhone/.test(u)
+    ? "iPhone"
+    : /iPad/.test(u)
+      ? "iPad"
+      : /Android/.test(u)
+        ? "Android"
+        : /Windows/.test(u)
+          ? "Windows"
+          : /Mac OS X/.test(u)
+            ? "Mac"
+            : /Linux/.test(u)
+              ? "Linux"
+              : "";
+  return os ? `${browser} on ${os}` : browser;
+}
+
+/**
+ * Sign this browser in: lists it on the account and returns the session
+ * cookie. Refused with an AccountError when MAX_BROWSERS are already signed
+ * in; a browser idle for BROWSER_IDLE_DAYS gives up its place.
+ */
+export async function startSession(req: Request, a: Account) {
+  const now = new Date().toISOString();
+  let sessions = (a.sessions ?? []).filter((s) => daysSince(s.createdAt) * 864e5 < SESSION_MS);
+  // Signing in again in a browser that is still signed in replaces its old session.
+  const here = await currentSession(req);
+  if (here && here.account.id === a.id) sessions = sessions.filter((s) => s.id !== here.sessionId);
+  if (sessions.length >= MAX_BROWSERS) sessions = sessions.filter((s) => daysSince(s.lastSeen) < BROWSER_IDLE_DAYS);
+  if (sessions.length >= MAX_BROWSERS) {
+    const list = sessions.map((s) => `${s.name} (used ${whenText(s.lastSeen)})`).join(" and ");
+    throw new AccountError(
+      `This account is already open in ${MAX_BROWSERS} browsers: ${list}. Sign out in one of them first (My account → Browsers). A browser not used for ${BROWSER_IDLE_DAYS} days frees its place automatically.`,
+    );
+  }
+  const id = hex(crypto.getRandomValues(new Uint8Array(16)));
+  sessions.push({ id, name: browserName(req.headers.get("user-agent")), createdAt: now, lastSeen: now });
+  a.sessions = sessions;
+  await saveAccount(a);
+  const exp = Math.floor((Date.now() + SESSION_MS) / 1000);
+  const body = `${a.id}.${id}.${exp}`;
   return `${COOKIE}=${body}.${await hmac(body)}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly; SameSite=Lax${secure(req) ? "; Secure" : ""}`;
+}
+
+/** Sign one browser out (removes it from the account). */
+export async function endSession(a: Account, sessionId: string) {
+  const before = (a.sessions ?? []).length;
+  a.sessions = (a.sessions ?? []).filter((s) => s.id !== sessionId);
+  if (a.sessions.length !== before) await saveAccount(a);
 }
 export const clearSessionCookie = (req: Request) => `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure(req) ? "; Secure" : ""}`;
 
@@ -215,17 +298,28 @@ function readCookie(req: Request, name: string) {
   return null;
 }
 
-/** The signed-in account for this request, or null. */
-export async function currentAccount(req: Request): Promise<Account | null> {
+/** The signed-in account and browser session for this request, or null. */
+export async function currentSession(req: Request): Promise<{ account: Account; sessionId: string } | null> {
   const token = readCookie(req, COOKIE);
   if (!token) return null;
   const parts = token.split(".");
   if (parts.length !== 4) return null;
-  const [id, version, exp, sig] = parts;
+  const [id, sessionId, exp, sig] = parts;
   if (Number(exp) < Date.now() / 1000) return null;
-  if (!same(sig, await hmac(`${id}.${version}.${exp}`))) return null;
+  if (!same(sig, await hmac(`${id}.${sessionId}.${exp}`))) return null;
   const a = await getAccount(id);
-  return a && String(a.sessionVersion) === version ? a : null;
+  const s = a?.sessions?.find((x) => x.id === sessionId);
+  if (!a || !s) return null; // signed out from another browser, or the password changed
+  if (Date.now() - new Date(s.lastSeen).getTime() > 3600e3) {
+    s.lastSeen = new Date().toISOString();
+    await saveAccount(a);
+  }
+  return { account: a, sessionId };
+}
+
+/** The signed-in account for this request, or null. */
+export async function currentAccount(req: Request): Promise<Account | null> {
+  return (await currentSession(req))?.account ?? null;
 }
 
 // ---------------------------------------------------------------- abuse protection

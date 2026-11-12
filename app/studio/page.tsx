@@ -20,6 +20,7 @@ import {
 } from "@/lib/studio-config";
 import OpeningsEditor from "@/components/openings-editor";
 import StudioGate, { type StudioUser } from "@/components/studio/gate";
+import LicenceBanner from "@/components/studio/licence-banner";
 import QuotePanel from "@/components/quote-panel";
 import SyncPanel from "@/components/sync-panel";
 import ShapeThumb from "@/components/shape-thumb";
@@ -112,6 +113,15 @@ function StudioApp({ user }: { user: StudioUser }) {
     [showLabels, setShowLabels] = useState(true),
     [assembly3d, setAssembly3d] = useState(true);
   const replacePhoto = useRef(false);
+  // Desktop limited mode (licence ended, or offline too long): view only.
+  const limited = user.mode === "desktop" && user.limited;
+  const blocked = (what: string) => {
+    if (!limited) return false;
+    toast.error(`${what} is switched off in limited mode.`, {
+      description: user.mode === "desktop" && user.reason === "offline-too-long" ? "Connect to the internet so the app can check your licence." : "Renew your licence to continue.",
+    });
+    return true;
+  };
   const past = useRef<Project[]>([]),
     future = useRef<Project[]>([]),
     // Re-render when undo/redo history changes (the stacks live in refs).
@@ -180,6 +190,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     }
   }
   function addPiece() {
+    if (blocked("Adding pieces")) return;
     const id = crypto.randomUUID();
     change((p) => {
       const spot = findFreeSpot(p, slab.id, 800, 600) ?? { x: p.margin, y: p.margin };
@@ -212,6 +223,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     setSelected(id);
   }
   function duplicatePiece(source: Piece) {
+    if (blocked("Adding pieces")) return;
     const id = crypto.randomUUID();
     change((p) => {
       const f = footprint(source);
@@ -265,6 +277,7 @@ function StudioApp({ user }: { user: StudioUser }) {
   }
   /** Add each scanned shape as a free-form piece in the first free spot. */
   function addScannedPieces(shapes: ScannedShape[]) {
+    if (blocked("Adding pieces")) return;
     if (!shapes.length) return;
     let firstId = "";
     change((p) => {
@@ -342,6 +355,7 @@ function StudioApp({ user }: { user: StudioUser }) {
   }
   /** Save to this copy's project store; returns the project id, or null on failure. */
   async function save(): Promise<string | null> {
+    if (blocked("Saving")) return null;
     setBusy(true);
     try {
       const snapshot = current.current;
@@ -399,7 +413,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     }
   }
   async function upload(f?: File) {
-    if (!f) return;
+    if (!f || blocked("Adding slab photos")) return;
     if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
       toast.error(
         "Choose JPG, PNG, or WebP. For iPhone photos, export as JPG.",
@@ -643,6 +657,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     }));
   }
   function download(data: Blob, name: string) {
+    if (blocked("Downloading")) return;
     const u = URL.createObjectURL(data),
       a = document.createElement("a");
     a.href = u;
@@ -657,6 +672,7 @@ function StudioApp({ user }: { user: StudioUser }) {
       .toLowerCase() || "jeo-assembly";
   /** Backup file with the slab photos embedded, so it opens in any copy of the studio. */
   async function exportBackup() {
+    if (blocked("Downloading")) return;
     const id = toast.loading("Preparing backup with slab photos…");
     try {
       const { createBackup } = await import("@/lib/backup");
@@ -668,6 +684,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     }
   }
   async function exportModel(format: ModelFormat) {
+    if (blocked("Downloading")) return;
     const id = toast.loading(`Preparing 3D model (.${format})…`);
     try {
       const { exportAssembly } = await import("@/lib/export-3d");
@@ -679,6 +696,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     }
   }
   async function exportSvg() {
+    if (blocked("Downloading")) return;
     try {
       const root = document.getElementById(
         "assembly-svg",
@@ -868,7 +886,7 @@ function StudioApp({ user }: { user: StudioUser }) {
           <button onClick={openProjects}>
             <FolderOpen /> <span>Projects</span>
           </button>
-          <button onClick={() => setDialog("export")}>
+          <button onClick={() => !blocked("Exporting") && setDialog("export")}>
             <Download />
             <span>Export</span>
           </button>
@@ -878,6 +896,7 @@ function StudioApp({ user }: { user: StudioUser }) {
           </button>
         </div>
       </header>
+      {user.mode === "desktop" && <LicenceBanner user={user} />}
       <div className="projectbar">
         <div>
           <span className="eyebrow">WORKSPACE / </span>

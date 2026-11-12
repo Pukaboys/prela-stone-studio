@@ -1,10 +1,15 @@
 /**
  * Desktop app only: the licence on this computer.
- * GET  → status (checks in online once a day when possible)
+ * GET  → status. Checks in with the website whenever online (each start and
+ *        every few hours; ?check=1 forces it): renewals, plan changes and
+ *        removed computers. Offline, the app keeps full use for
+ *        OFFLINE_GRACE_DAYS since the last check-in, then runs in limited
+ *        (view-only) mode, as it does when the licence has ended.
  * POST { action: "activate", email, password } | { action: "signout" }
  */
 import { body, err, ok } from "@/lib/http";
-import { deviceId, isDesktop, localLicence, localToken, saveLocalToken } from "@/lib/studio-access";
+import { OFFLINE_GRACE_DAYS, verifyLicence } from "@/lib/licence-token";
+import { deviceId, isDesktop, isLimited, localLicence, localToken, saveLocalToken } from "@/lib/studio-access";
 import { getSetting } from "@/lib/storage";
 
 async function server() {
@@ -24,33 +29,42 @@ async function call(path: string, data: unknown) {
   return { status: res.status, ...json };
 }
 
-async function status() {
+async function status(force = false) {
   let lic = await localLicence();
-  // Check in once a day: renewals, plan changes, removed computers.
-  if (lic.ok && lic.needsRefresh) {
+  let online: boolean | null = null; // null: no check needed right now
+  const token = await localToken();
+  // Check in when due, and always when the licence has ended or the app was
+  // offline too long (a renewal or reconnection lifts limited mode).
+  if (token && (force || isLimited(lic) || (lic.ok && lic.needsRefresh))) {
     try {
-      const r = await call("/api/licence/refresh", { token: await localToken() });
+      const r = await call("/api/licence/refresh", { token });
+      online = true;
       if (r.token) await saveLocalToken(r.token);
-      else if (r.status === 403 || r.status === 401) await saveLocalToken(null);
+      else if (r.status === 403 || r.status === 401) await saveLocalToken(null); // computer removed: sign in again
       lic = await localLicence();
     } catch {
-      // Offline: keep working until the offline grace period runs out.
+      online = false; // offline: full use continues until the grace period runs out
     }
   }
-  const p = "payload" in lic ? lic.payload : undefined;
+  const p = "payload" in lic ? lic.payload : token ? await verifyLicence(token) : null;
+  const sinceCheck = p ? (Date.now() - p.iat) / 864e5 : 0;
   return {
     ok: lic.ok,
+    limited: isLimited(lic),
     reason: lic.ok ? null : lic.reason,
     email: p?.email ?? null,
     plan: p?.plan ?? null,
     expiresAt: p ? new Date(p.exp).toISOString() : null,
+    lastCheck: p ? new Date(p.iat).toISOString() : null,
+    offlineDaysLeft: p ? Math.max(0, Math.ceil(OFFLINE_GRACE_DAYS - sinceCheck)) : 0,
+    online,
     server: await server(),
   };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!isDesktop()) return err(404, "Not available.");
-  return ok(await status());
+  return ok(await status(new URL(req.url).searchParams.has("check")));
 }
 
 export async function POST(req: Request) {

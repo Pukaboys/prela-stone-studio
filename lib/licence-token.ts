@@ -24,8 +24,10 @@ export type LicencePayload = {
   /** Issued at (ms). */
   iat: number;
 };
-/** The app must check in online at least this often (offline grace). */
-export const OFFLINE_GRACE_DAYS = 30;
+/** The app must check in online at least this often (offline grace); after that it runs in limited mode. */
+export const OFFLINE_GRACE_DAYS = 7;
+/** Check in with the website when the token is older than this (each start, and every few hours). */
+export const REFRESH_AFTER_MS = 3600e3;
 
 const b64u = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const fromB64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
@@ -79,6 +81,6 @@ export async function checkLicence(token: string | null, deviceId: string, now =
   if (p.dev !== deviceId) return { ok: false, reason: "device", payload: p };
   if (p.exp <= now) return { ok: false, reason: "expired", payload: p };
   if (now - p.iat > OFFLINE_GRACE_DAYS * 864e5) return { ok: false, reason: "offline-too-long", payload: p };
-  // Check in with the website daily when online (renewals, removed devices).
-  return { ok: true, payload: p, needsRefresh: now - p.iat > 864e5 };
+  // Check in with the website whenever online (renewals, removed computers).
+  return { ok: true, payload: p, needsRefresh: now - p.iat > REFRESH_AFTER_MS };
 }

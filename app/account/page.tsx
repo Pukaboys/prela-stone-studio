@@ -183,6 +183,45 @@ export default function AccountPage() {
           )}
         </section>
 
+        <section className="account-card" id="browsers">
+          <h2>
+            Browsers ({account.browsers.length} of {account.maxBrowsers})
+          </h2>
+          <p className="muted">
+            The online studio can be open in {account.maxBrowsers} browsers at a time. To use another browser, sign out in one of these first.
+          </p>
+          <ul className="device-list">
+            {account.browsers.map((b) => (
+              <li key={b.id}>
+                <span>
+                  <b>
+                    {b.name}
+                    {b.current ? " · this browser" : ""}
+                  </b>
+                  <small>
+                    Signed in {fmtDate(b.createdAt)} · last used {fmtDate(b.lastSeen)}
+                  </small>
+                </span>
+                {!b.current && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={async () => {
+                      if (!confirm(`Sign out “${b.name}”?`)) return;
+                      try {
+                        setAccount((await post<{ account: PublicAccount }>("/api/account/browsers", { sessionId: b.id })).account);
+                      } catch (e) {
+                        onError(e instanceof Error ? e.message : String(e));
+                      }
+                    }}
+                  >
+                    Sign out
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+
         <section className="account-card">
           <h2>Password</h2>
           <form

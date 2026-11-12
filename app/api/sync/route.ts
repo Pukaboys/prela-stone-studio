@@ -1,23 +1,26 @@
 /**
- * Desktop ↔ website sync (desktop app only).
+ * Desktop <-> website sync (desktop app only).
  *
- * The desktop app's local server talks to the website on the user's behalf:
- * it signs in once with the account email and password and keeps only the session cookie
- * (never the password) in its data folder. Projects travel with their slab
- * photos; the project ID is kept, so uploading again updates the same copy.
+ * The desktop app's local server talks to the website on the user's behalf,
+ * using this computer's signed licence ("Authorization: Licence <token>"), so
+ * no password is needed and it does not take one of the account's browser
+ * places. Projects travel with their slab photos; the project ID is kept, so
+ * uploading again updates the same copy.
  *
  * Disabled unless JEO_DESKTOP=1 (set by the desktop app), so the public
  * website cannot be used to make requests to other servers.
  */
 import { validProject, type Project } from "@/lib/model";
+import { verifyLicence } from "@/lib/licence-token";
 import { getStore, type ObjectStore } from "@/lib/storage";
+import { localLicence, localToken } from "@/lib/studio-access";
 
-const SETTINGS = "settings/sync.json";
 const STORED = /^\/api\/images\?id=([a-zA-Z0-9-]+)$/;
-type Settings = { url: string; cookie: string; connectedAt: string };
+type Link = { url: string; token: string };
 
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 const available = () => typeof process !== "undefined" && process.env.JEO_DESKTOP === "1";
+const server = () => String(process.env.JEO_LICENSE_SERVER ?? "").replace(/\/+$/, "");
 
 async function readJson<T>(store: ObjectStore, key: string): Promise<T | null> {
   const obj = await store.get(key);
@@ -25,16 +28,15 @@ async function readJson<T>(store: ObjectStore, key: string): Promise<T | null> {
   return JSON.parse(await new Response(obj.body as BodyInit).text()) as T;
 }
 
-function normaliseUrl(raw: string) {
-  const u = new URL(raw.trim().replace(/\/+$/, ""));
-  if (u.protocol !== "https:" && u.hostname !== "127.0.0.1" && u.hostname !== "localhost")
-    throw Error("Use the website's https:// address.");
-  return u.origin;
+/** The website and this computer's licence, or null when not activated. */
+async function link(): Promise<Link | null> {
+  const token = await localToken();
+  return server() && token ? { url: server(), token } : null;
 }
 
-async function remote(s: Settings, path: string, init: RequestInit = {}) {
-  const res = await fetch(s.url + path, { ...init, headers: { ...(init.headers as object), cookie: s.cookie }, redirect: "manual" });
-  if (res.status === 401) throw Error("The website session has ended. Connect again with your email and password.");
+async function remote(s: Link, path: string, init: RequestInit = {}) {
+  const res = await fetch(s.url + path, { ...init, headers: { ...(init.headers as object), Authorization: `Licence ${s.token}` }, redirect: "manual" });
+  if (res.status === 401) throw Error("The website did not accept this computer. Sign out of the app and sign in again.");
   if (res.status === 402) throw Error("Your licence has ended. Renew it on your account page on the website.");
   if (!res.ok) throw Error(`Website replied ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res;
@@ -51,34 +53,19 @@ function relink(p: Project, map: Map<string, string>): Project {
 
 export async function GET() {
   if (!available()) return json({ available: false });
-  const s = await readJson<Settings>(await getStore(), SETTINGS);
-  return json({ available: true, connected: !!s, url: s?.url ?? null });
+  const s = await link();
+  const email = s ? ((await verifyLicence(s.token))?.email ?? null) : null;
+  return json({ available: true, connected: !!s, url: s?.url ?? null, email });
 }
 
 export async function POST(req: Request) {
   if (!available()) return json({ error: "Sync is only available in the desktop app." }, 404);
   const store = await getStore();
   try {
-    const body = (await req.json()) as { action?: string; url?: string; email?: string; password?: string; id?: string };
-    if (body.action === "connect") {
-      const url = normaliseUrl(String(body.url ?? ""));
-      const res = await fetch(url + "/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: String(body.email ?? ""), password: String(body.password ?? "") }),
-      });
-      if (!res.ok) throw Error(res.status === 401 ? "Wrong email or password." : `The website replied ${res.status}.`);
-      const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
-      const settings: Settings = { url, cookie, connectedAt: new Date().toISOString() };
-      await store.put(SETTINGS, JSON.stringify(settings), "application/json");
-      return json({ connected: true, url });
-    }
-    if (body.action === "disconnect") {
-      await store.put(SETTINGS, "null", "application/json");
-      return json({ connected: false });
-    }
-    const s = await readJson<Settings>(store, SETTINGS);
-    if (!s) return json({ error: "Connect to the website first." }, 400);
+    const body = (await req.json()) as { action?: string; id?: string };
+    const s = await link();
+    if (!s) return json({ error: "Sign in to the app with your account first." }, 400);
+    if (!(await localLicence()).ok) return json({ error: "Limited mode: renew your licence or connect to the internet to sync." }, 402);
 
     if (body.action === "list") return json(await (await remote(s, "/api/projects")).json());
 

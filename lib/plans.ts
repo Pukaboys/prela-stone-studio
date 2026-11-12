@@ -20,6 +20,10 @@ export type Plan = {
 export const CURRENCY = "EUR";
 export const TRIAL_DAYS = 14;
 export const TRIAL_DEVICES = 1;
+/** Browsers that can be signed in to one account at the same time (a further sign-in is refused). */
+export const MAX_BROWSERS = 2;
+/** A browser not used for this many days gives its place to a new sign-in. */
+export const BROWSER_IDLE_DAYS = 7;
 
 export const PLANS: Plan[] = [
   { id: "monthly", name: "Monthly", price: 19, per: "per month", days: 31, devices: 2, note: "Cancel any time" },

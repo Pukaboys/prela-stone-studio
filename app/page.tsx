@@ -71,7 +71,7 @@ const FEATURES = [
 
 const FAQ = [
   ["How does the free trial work?", `Create an account and you get ${TRIAL_DAYS} days with every feature, in the browser and on one computer. No card is needed. When the trial ends, choose a plan to keep working — your projects are kept.`],
-  ["Do I need an internet connection?", "The desktop app works offline. It checks your licence online about once a day and keeps working offline for up to 30 days."],
+  ["Do I need an internet connection?", "The desktop app works offline. When online it checks your subscription automatically; without internet it keeps working fully for 7 days, then opens projects in view-only mode until it can check again."],
   ["On how many computers can I use it?", `Each plan includes ${PLANS[0].devices} computers plus the online studio. You can move a licence to another computer from your account page at any time.`],
   ["How do I pay?", "Create your account, then contact us with the plan you want. Pay by bank transfer and your licence is extended the same day — you see it on your account page."],
   ["What kind of photo do I need?", "A normal phone photo showing the whole slab. It does not have to be taken straight on: the corners are found automatically and the photo is straightened. Then enter the slab's measured width, height and thickness."],

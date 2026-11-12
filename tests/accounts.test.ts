@@ -20,6 +20,8 @@ const activate = await import("@/app/api/licence/activate/route");
 const refresh = await import("@/app/api/licence/refresh/route");
 const release = await import("@/app/api/licence/release/route");
 const projects = await import("@/app/api/projects/route");
+const logout = await import("@/app/api/auth/logout/route");
+const browsers = await import("@/app/api/account/browsers/route");
 const admin = await import("@/app/api/admin/accounts/route");
 const accounts = await import("@/lib/accounts");
 const { checkLicence, verifyLicence } = await import("@/lib/licence-token");
@@ -27,8 +29,10 @@ const { defaultProject } = await import("@/lib/model");
 
 let ipCounter = 1;
 const ip = () => `198.51.100.${ipCounter++}`;
-function req(path: string, init: { method?: string; body?: unknown; cookie?: string; ip?: string; origin?: string } = {}) {
+function req(path: string, init: { method?: string; body?: unknown; cookie?: string; ip?: string; origin?: string; ua?: string; auth?: string } = {}) {
   const headers: Record<string, string> = { "x-forwarded-for": init.ip ?? "203.0.113.9", host: "studio.example" };
+  if (init.ua) headers["user-agent"] = init.ua;
+  if (init.auth) headers.authorization = init.auth;
   if (init.body !== undefined) headers["content-type"] = "application/json";
   if (init.cookie) headers.cookie = init.cookie;
   if (init.origin) headers.origin = init.origin;
@@ -202,10 +206,98 @@ describe("owner switches on paid plans", () => {
     expect((await projects.GET(req("projects", { cookie: miaCookie }))).status).toBe(402);
   });
   it("the owner works on the shared (existing) projects", async () => {
+    const o = (await accounts.findByEmail("owner@example.com"))!;
+    o.sessions = []; // free the owner's two browser places used above
+    await accounts.saveAccount(o);
     const owner = cookieOf(await login.POST(req("auth/login", { body: { email: "owner@example.com", password: "slab-planner-2026" }, ip: ip() })));
     const p = { ...defaultProject(), name: "Owner project" };
     await projects.POST(new Request("https://studio.example/api/projects", { method: "POST", headers: { cookie: owner, "content-type": "application/json" }, body: JSON.stringify(p) }));
     const store = await (await import("@/lib/storage")).getStore();
     expect((await store.list("projects/")).length).toBeGreaterThan(0);
+  });
+});
+
+describe("browser limit (online studio)", () => {
+  const CHROME_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
+  const SAFARI_IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+  const signIn = (email: string, ua?: string, cookie?: string) =>
+    login.POST(req("auth/login", { body: { email, password: "slab-planner-2026" }, ip: ip(), ua, cookie }));
+  const who = async (cookie: string) => ((await (await me.GET(req("auth/me", { cookie }))).json()) as { account: { browsers: { id: string; name: string; current: boolean }[] } | null }).account;
+
+  it("names browsers", () => {
+    expect(accounts.browserName(CHROME_WIN)).toBe("Chrome on Windows");
+    expect(accounts.browserName(SAFARI_IPHONE)).toBe("Safari on iPhone");
+  });
+  it("allows two browsers and refuses a third", async () => {
+    await accounts.createAccount("nora@example.com", "slab-planner-2026");
+    const a = await signIn("nora@example.com", CHROME_WIN);
+    const b = await signIn("nora@example.com", SAFARI_IPHONE);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const third = await signIn("nora@example.com");
+    expect(third.status).toBe(409);
+    expect(((await third.json()) as { error: string }).error).toMatch(/Chrome on Windows.*Safari on iPhone/);
+    expect(third.headers.get("set-cookie")).toBeNull();
+    const list = (await who(cookieOf(a)))!.browsers;
+    expect(list.map((x) => [x.name, x.current])).toEqual([["Chrome on Windows", true], ["Safari on iPhone", false]]);
+  });
+  it("signing in again in the same browser does not take another place", async () => {
+    const acc = (await accounts.findByEmail("nora@example.com"))!;
+    const chrome = acc.sessions![0];
+    const cookie = `jeo_account=${acc.id}.${chrome.id}.0.x`; // not valid: a stale cookie is just ignored
+    expect((await signIn("nora@example.com", CHROME_WIN, cookie)).status).toBe(409);
+  });
+  it("signing out frees the place; a signed-out browser loses access", async () => {
+    const a = (await accounts.findByEmail("nora@example.com"))!;
+    a.sessions = [];
+    await accounts.saveAccount(a);
+    const one = cookieOf(await signIn("nora@example.com", CHROME_WIN));
+    const two = cookieOf(await signIn("nora@example.com", SAFARI_IPHONE));
+    expect((await signIn("nora@example.com", CHROME_WIN, one)).status).toBe(200); // same browser again: replaces its own place
+    const again = (await accounts.findByEmail("nora@example.com"))!;
+    expect(again.sessions).toHaveLength(2);
+    await logout.POST(req("auth/logout", { method: "POST", cookie: two }));
+    expect(await who(two)).toBeNull();
+    const three = await signIn("nora@example.com");
+    expect(three.status).toBe(200);
+    // Sign "three" out from the Chrome browser: it is locked out at once.
+    const threeId = (await accounts.findByEmail("nora@example.com"))!.sessions!.at(-1)!.id;
+    const chrome = (await accounts.findByEmail("nora@example.com"))!.sessions![0];
+    expect(chrome.name).toBe("Chrome on Windows");
+    const r = await browsers.POST(req("account/browsers", { body: { sessionId: threeId }, cookie: cookieOf(three) }));
+    expect(r.status).toBe(200);
+    expect(await who(cookieOf(three))).toBeNull();
+    expect((await projects.GET(req("projects", { cookie: cookieOf(three) }))).status).toBe(401);
+  });
+  it("a browser unused for 7 days gives its place to a new sign-in", async () => {
+    const a = (await accounts.findByEmail("nora@example.com"))!;
+    a.sessions = [
+      { id: "a".repeat(32), name: "Old laptop", createdAt: new Date(Date.now() - 20 * 864e5).toISOString(), lastSeen: new Date(Date.now() - 8 * 864e5).toISOString() },
+      { id: "b".repeat(32), name: "Office", createdAt: new Date().toISOString(), lastSeen: new Date().toISOString() },
+    ];
+    await accounts.saveAccount(a);
+    expect((await signIn("nora@example.com")).status).toBe(200);
+    expect((await accounts.findByEmail("nora@example.com"))!.sessions!.map((x) => x.name)).not.toContain("Old laptop");
+  });
+  it("the owner can sign a customer out of every browser", async () => {
+    const owner = (await accounts.findByEmail("owner@example.com"))!;
+    owner.sessions = [];
+    await accounts.saveAccount(owner);
+    const oc = cookieOf(await signIn("owner@example.com"));
+    const nora = (await accounts.findByEmail("nora@example.com"))!;
+    await admin.POST(req("admin/accounts", { body: { accountId: nora.id, action: "signout" }, cookie: oc }));
+    expect((await accounts.findByEmail("nora@example.com"))!.sessions).toEqual([]);
+  });
+  it("desktop sync uses the computer licence, not a browser place", async () => {
+    await accounts.createAccount("omar@example.com", "slab-planner-2026");
+    const r = await activate.POST(req("licence/activate", { body: { email: "omar@example.com", password: "slab-planner-2026", deviceId: DEVICE_A, deviceName: "PC" }, ip: ip() }));
+    const { token } = (await r.json()) as { token: string };
+    expect((await projects.GET(req("projects", { auth: `Licence ${token}` }))).status).toBe(200);
+    expect((await accounts.findByEmail("omar@example.com"))!.sessions ?? []).toEqual([]);
+    expect((await projects.GET(req("projects", { auth: "Licence forged.token" }))).status).toBe(401);
+    const omar = (await accounts.findByEmail("omar@example.com"))!;
+    omar.licence.devices = [];
+    await accounts.saveAccount(omar);
+    expect((await projects.GET(req("projects", { auth: `Licence ${token}` }))).status).toBe(401); // computer removed
   });
 });
