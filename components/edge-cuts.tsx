@@ -4,7 +4,17 @@
  * 45° mitre below (top face full, slope underneath) or 45° mitre above
  * (bottom face full, top shorter). Small cross-section icons show the profile.
  */
-import { CUT_LABEL, SIDES, SIDE_LABEL, edgeCutsOf, type EdgeCut, type Side } from "@/lib/edges";
+import {
+  CUT_LABEL,
+  FINISHES,
+  FINISH_LABEL,
+  SIDES,
+  SIDE_LABEL,
+  edgeCutsOf,
+  type EdgeCut,
+  type EdgeFinish,
+  type Side,
+} from "@/lib/edges";
 import type { Piece } from "@/lib/model";
 
 const CUTS: EdgeCut[] = ["straight", "below", "above"];
@@ -39,6 +49,17 @@ export default function EdgeCutsEditor({
       cutAngle: undefined,
     });
   const all = SIDES.every((s) => cuts[s] === cuts.back) ? cuts.back : null;
+  const finishes = piece.finishes ?? {};
+  const finishOf = (s: Side): EdgeFinish => finishes[s] ?? "raw";
+  const setFinish = (sides: Side[], f: EdgeFinish) => {
+    const next = { ...finishes };
+    for (const s of sides) {
+      if (f === "raw") delete next[s];
+      else next[s] = f;
+    }
+    onPatch({ finishes: Object.keys(next).length ? next : undefined });
+  };
+  const allFinish = SIDES.every((s) => finishOf(s) === finishOf("back")) ? finishOf("back") : "";
 
   return (
     <div className="edge-cuts">
@@ -66,12 +87,34 @@ export default function EdgeCutsEditor({
               );
             })}
           </div>
+          {side !== "all" && cuts[side] !== "straight" ? (
+            <span className="edge-finish joint" title="A mitred side is a joint and takes no finish">
+              joint
+            </span>
+          ) : (
+            <select
+              className="edge-finish"
+              aria-label={`${side === "all" ? "All sides" : SIDE_LABEL[side]} edge finish`}
+              value={side === "all" ? allFinish : finishOf(side)}
+              onChange={(e) =>
+                setFinish(side === "all" ? SIDES.filter((s) => cuts[s] === "straight") : [side], e.target.value as EdgeFinish)
+              }
+            >
+              {side === "all" && allFinish === "" && <option value="">Mixed</option>}
+              {FINISHES.map((f) => (
+                <option key={f} value={f}>
+                  {FINISH_LABEL[f]}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       ))}
       <p className="hint">
         <b>45° ▼ below</b>: the top face stays full size and the cut slopes in underneath (e.g. a countertop edge
         meeting an apron). <b>45° ▲ above</b>: the bottom stays full size and the top is {thickness} mm shorter.
-        Back is the wall side, front the bottom edge in the drawings.
+        Back is the wall side, front the bottom edge in the drawings. Finishes (polished, bullnose…) apply to
+        straight sides and feed the cut list and quote.
       </p>
     </div>
   );

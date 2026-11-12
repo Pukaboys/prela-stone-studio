@@ -1,3 +1,4 @@
+import { validPricing, type Pricing } from "@/lib/pricing";
 import { validEdges, validFinishes, type EdgeCuts, type EdgeFinishes } from "@/lib/edges";
 import {
   area,
@@ -129,6 +130,8 @@ export type Project = {
   defects: Defect[];
   kerf: number;
   margin: number;
+  /** Prices for the quote (optional). */
+  pricing?: Pricing;
 };
 export const colors = ["#bde96e", "#65cbd5", "#ddaeec", "#f2be70", "#95aafa"];
 export function demo(): Project {
@@ -651,6 +654,7 @@ export function validProject(input: unknown): input is Project {
   if (!Array.isArray(p.pieces) || p.pieces.length > 100) return false;
   if (!Array.isArray(p.defects) || p.defects.length > 100) return false;
   if (![p.kerf, p.margin].every((n) => num(n, 0, 500))) return false;
+  if (!validPricing(p.pricing)) return false;
   if (!p.slabs.every(validSlab)) return false;
   const slabIds = new Set(p.slabs.map((s: Obj) => s.id));
   return p.pieces.every((q) => validPiece(q, slabIds)) && p.defects.every((d) => validDefect(d, slabIds));

@@ -4,6 +4,7 @@ import Assembly3D from "@/components/assembly-3d";
 import Num from "@/components/num-field";
 import OpeningsEditor from "@/components/openings-editor";
 import SignIn from "@/components/sign-in";
+import QuotePanel from "@/components/quote-panel";
 import ShapeThumb from "@/components/shape-thumb";
 import EdgeCutsEditor from "@/components/edge-cuts";
 import { edgeCutsOf, mitreStrips } from "@/lib/edges";
@@ -35,6 +36,8 @@ import {
   SlidersHorizontal,
   ZoomIn,
   ZoomOut,
+  Printer,
+  Receipt,
   LogOut,
   Crop,
   Box,
@@ -143,7 +146,7 @@ function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: Photo
   const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
   return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%` }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
 }
-type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
+type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "quote" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
 const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
   slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
   photo: { title: "Adjust slab photo", description: "Straighten, correct perspective and frame the slab edges." },
@@ -151,6 +154,7 @@ const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: st
   scan: { title: "Scan shapes", description: "Trace pieces from a photo of templates or a drawing." },
   edges: { title: "Edge cuts", description: "Straight or 45° mitre on each side, below or above." },
   openings: { title: "Openings", description: "Sinks, tap holes, hobs and other cut-outs, positioned from the edges." },
+  quote: { title: "Quote", description: "Prices per m², per metre of edge and per cut-out; totals update as you type." },
   projects: { title: "Your projects", description: "Saved projects are available when you return." },
   export: { title: "Export project", description: "Keep a project file or share the planned layout." },
   checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
@@ -1774,7 +1778,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
           className={
             "studio-dialog" +
             (dialog === "photo" ? " photo-dialog" : "") +
-            (dialog === "shape" || dialog === "scan" ? " wide-dialog" : "")
+            (dialog === "shape" || dialog === "scan" || dialog === "quote" ? " wide-dialog" : "")
           }
         >
           <DialogTitle>{dialog && dialogCopy[dialog].title}</DialogTitle>
@@ -1922,6 +1926,17 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
               </div>
             </>
           )}
+          {dialog === "quote" && (
+            <QuotePanel
+              project={pr}
+              onPricing={(pricing) => change((p) => ({ ...p, pricing }), false)}
+              onPrint={async () => {
+                const { reportHtml, printHtml } = await import("@/lib/print-report");
+                const { DEFAULT_PRICING } = await import("@/lib/production");
+                printHtml(reportHtml(current.current, { quote: { ...DEFAULT_PRICING, ...current.current.pricing } }));
+              }}
+            />
+          )}
           {dialog === "scan" && (
             <ShapeScanner multiple onCancel={() => setDialog("")} onUse={addScannedPieces} />
           )}
@@ -1986,6 +2001,26 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
               </button>
               <button onClick={() => jsonFile.current?.click()}>
                 <Upload /> Open project backup
+              </button>
+              <button
+                onClick={async () => {
+                  const { reportHtml, printHtml } = await import("@/lib/print-report");
+                  printHtml(reportHtml(current.current));
+                }}
+              >
+                <Printer /> Print cut list / Save PDF
+              </button>
+              <button
+                onClick={async () => {
+                  const { projectDxf } = await import("@/lib/production");
+                  download(new Blob([projectDxf(current.current)], { type: "application/dxf" }), `${fileBase()}.dxf`);
+                  toast.success("DXF downloaded (millimetres; layers CUT, OPENING, MITRE, SLAB)");
+                }}
+              >
+                <Download /> Download DXF for CNC / saw
+              </button>
+              <button onClick={() => setDialog("quote")}>
+                <Receipt /> Quote…
               </button>
               <button onClick={() => exportModel("glb")}>
                 <Box /> Download 3D model (.glb)
