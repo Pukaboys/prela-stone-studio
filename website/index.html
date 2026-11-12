@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jeo Stone Studio · Slab planning, vein matching and cut lists</title>
+  <meta name="description" content="Turn a phone photo of a slab into a true-to-scale layout. Place every piece on the real stone, match the veins, check the saw gap and send the workshop a cut list, DXF and quote." />
+  <meta name="theme-color" content="#0f1416" />
+  <meta property="og:title" content="Jeo Stone Studio" />
+  <meta property="og:description" content="Plan every slab before the first cut: photo straightening, vein matching, 3D preview, cut lists, DXF and quotes." />
+  <meta property="og:image" content="img/layout.webp" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="#top" aria-label="Jeo Stone Studio home">
+        <img src="favicon.svg" alt="" width="34" height="34" />
+        <span><b>JEO</b> STONE STUDIO</span>
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="#faq">FAQ</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <a class="btn btn-primary btn-sm" href="#download">Download</a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="mobile-nav" aria-label="Menu">
+        <span></span><span></span>
+      </button>
+    </div>
+    <nav id="mobile-nav" class="mobile-nav" aria-label="Main" hidden>
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="#faq">FAQ</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" id="top">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Slab planning for stone fabricators</p>
+          <h1>Cut the right piece from the right part of the slab.</h1>
+          <p class="lead">
+            Jeo Stone Studio turns a phone photo of a slab into a true-to-scale layout. Place every countertop, sink and
+            apron on the real stone, match the veins across the joints, check the saw gap — and hand the workshop a cut
+            list, a DXF and a price before the first cut.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#download" data-download="windows">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.4 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z" fill="currentColor"/></svg>
+              Download for Windows
+            </a>
+            <a class="btn btn-ghost" href="#download" data-download="mac">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.8-1.7 0-3.2 1-4 2.4-1.8 3-.5 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.5 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.5-1-2.5-3.9zM14 5.2c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1 .1 2.1-.6 2.8-1.4z" fill="currentColor"/></svg>
+              Download for Mac
+            </a>
+          </div>
+          <p class="trust">Windows 10 / 11 · macOS · works offline · your slab photos stay on your computer</p>
+        </div>
+        <div class="hero-shot">
+          <figure class="frame frame-main">
+            <img src="img/layout.webp" alt="Jeo Stone Studio slab layout: four pieces placed on a marble slab with a marked defect" width="1440" height="900" />
+          </figure>
+          <figure class="frame frame-float">
+            <img src="img/corners.webp" alt="A slab photographed at an angle with its four corners detected automatically" width="1440" height="900" loading="lazy" />
+            <figcaption>Corners found automatically</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Facts -->
+    <section class="facts" aria-label="At a glance">
+      <div class="wrap facts-grid">
+        <div><b>4 mm</b><span>saw gap checked on the real outlines</span></div>
+        <div><b>0.2 mm</b><span>accuracy on circles and curves</span></div>
+        <div><b>2D + 3D</b><span>preview of the finished kitchen</span></div>
+        <div><b>PDF · DXF</b><span>cut lists for the workshop and the saw</span></div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="section" id="how">
+      <div class="wrap">
+        <p class="eyebrow">How it works</p>
+        <h2>From slab photo to cut list in four steps</h2>
+        <ol class="steps">
+          <li>
+            <span class="step-no">1</span>
+            <h3>Photograph the slab</h3>
+            <p>Any phone photo, even taken at an angle. The four slab corners are found automatically and the photo is straightened to the slab's measured width and height.</p>
+          </li>
+          <li>
+            <span class="step-no">2</span>
+            <h3>Enter the pieces</h3>
+            <p>Countertops, backsplashes, aprons and tables: rectangles, circles, arches, curved bands, free forms or scanned templates — with sinks, tap holes, hobs, 45° mitres and edge finishes.</p>
+          </li>
+          <li>
+            <span class="step-no">3</span>
+            <h3>Plan the cuts</h3>
+            <p>Drag pieces over the stone to follow the veins, turn them with the mouse wheel, or let Auto-arrange pack them. Overlaps, slab edges and defects are checked as you go.</p>
+          </li>
+          <li>
+            <span class="step-no">4</span>
+            <h3>Send it to the workshop</h3>
+            <p>Print the cut list or save it as PDF, export a DXF for the CNC or bridge saw, give the client a quote and a 3D view of the finished surface.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Showcase -->
+    <section class="section section-alt" id="tour">
+      <div class="wrap">
+        <p class="eyebrow">See it before you install it</p>
+        <h2>A tour of the studio</h2>
+        <div class="tabs" role="tablist" aria-label="Screens">
+          <button role="tab" aria-selected="true" aria-controls="tab-straighten" id="t-straighten">Straighten</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-plan" id="t-plan">Plan</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-assemble" id="t-assemble">Assemble</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-shapes" id="t-shapes">Shapes</button>
+          <button role="tab" aria-selected="false" aria-controls="tab-produce" id="t-produce">Produce</button>
+        </div>
+        <div class="panels">
+          <div class="panel" role="tabpanel" id="tab-straighten" aria-labelledby="t-straighten">
+            <div class="panel-pair">
+              <figure class="frame"><img src="img/corners.webp" alt="Corner editor with the slab outline over an angled photo" loading="lazy" width="1440" height="900" /><figcaption>Before: photo taken at an angle, corners detected</figcaption></figure>
+              <figure class="frame"><img src="img/straightened.webp" alt="The same slab straightened to 3200 × 2000 mm in the slab layout" loading="lazy" width="1440" height="900" /><figcaption>After: the slab square-on, at its real size</figcaption></figure>
+            </div>
+            <p class="panel-text">Drag any corner that is hidden behind a clamp; a magnifier helps you place it exactly. The straightened photo becomes the slab, measured in millimetres.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="tab-plan" aria-labelledby="t-plan" hidden>
+            <figure class="frame"><img src="img/layout.webp" alt="Slab layout with pieces, openings and a painted defect" loading="lazy" width="1440" height="900" /></figure>
+            <p class="panel-text">Pieces sit on the real stone. Paint defects and the checks keep every piece clear of them, of the slab edge and of each other — always leaving the saw gap.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="tab-assemble" aria-labelledby="t-assemble" hidden>
+            <div class="panel-pair">
+              <figure class="frame"><img src="img/assembly-3d.webp" alt="3D assembly of the cut pieces with the marble texture" loading="lazy" width="1440" height="900" /><figcaption>3D, with real mitred edges</figcaption></figure>
+              <figure class="frame"><img src="img/assembly-2d.webp" alt="2D assembly showing how the veins continue across pieces" loading="lazy" width="1440" height="900" /><figcaption>2D, to follow the veins across joints</figcaption></figure>
+            </div>
+            <p class="panel-text">See how the veins run across the finished kitchen before cutting. Download the model as a 3D file, or open it in AR on an iPhone or iPad to show the client.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="tab-shapes" aria-labelledby="t-shapes" hidden>
+            <div class="panel-pair">
+              <figure class="frame"><img src="img/shape-editor.webp" alt="Shape editor showing a curved band piece" loading="lazy" width="1440" height="900" /><figcaption>Shapes with exact dimensions</figcaption></figure>
+              <figure class="frame"><img src="img/scanner.webp" alt="Template scanner tracing four shapes from a drawing" loading="lazy" width="1440" height="900" /><figcaption>Scan templates from a photo</figcaption></figure>
+            </div>
+            <p class="panel-text">Rounded and chamfered corners (with an angle or 45° in one click), circles, arches, curved bands and free forms. Photograph cardboard templates and every shape becomes a piece.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="tab-produce" aria-labelledby="t-produce" hidden>
+            <div class="panel-pair">
+              <figure class="frame frame-paper"><img src="img/cutlist.png" alt="Printed cut list with the slab drawing and a table of pieces" loading="lazy" width="1123" height="794" /><figcaption>Cut list, ready to print or save as PDF</figcaption></figure>
+              <figure class="frame"><img src="img/quote.webp" alt="Quote with stone, sawing, mitres and VAT" loading="lazy" width="1440" height="900" /><figcaption>Quote from your own prices</figcaption></figure>
+            </div>
+            <p class="panel-text">One click gives the workshop every size, position, edge and opening, and the saw a DXF in millimetres. The quote is calculated from the real stone area, sawing length, mitres, edges and cut-outs.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section" id="features">
+      <div class="wrap">
+        <p class="eyebrow">Everything in the studio</p>
+        <h2>Made for the workshop and the showroom</h2>
+        <div class="feature-grid">
+          <article><h3>Photo straightening</h3><p>Automatic corner detection and perspective correction, or straighten and crop by hand.</p></article>
+          <article><h3>Vein matching</h3><p>Move and rotate pieces over the photo to any angle; the assembly shows how the veins meet.</p></article>
+          <article><h3>Real shapes</h3><p>Corners with radius or chamfer, circles, arches, curved bands, L-shapes and free forms.</p></article>
+          <article><h3>Template scanner</h3><p>Trace shapes from a photo of templates or a drawing and add them as pieces in one go.</p></article>
+          <article><h3>Openings</h3><p>Sinks, tap holes and hobs — square, rounded or round — placed by their distance from the edges.</p></article>
+          <article><h3>Mitres and edges</h3><p>45° mitre below or above on each side, and finishes from polished to bullnose and ogee.</p></article>
+          <article><h3>Placement checks</h3><p>Overlaps, the saw gap, the slab edge and painted defects are checked on the real outlines.</p></article>
+          <article><h3>Auto-arrange</h3><p>Packs pieces onto the slabs to save stone, or fixes only the pieces with problems.</p></article>
+          <article><h3>3D and AR</h3><p>A textured 3D preview, downloadable for Windows 3D Viewer, Blender, SketchUp or iPhone AR.</p></article>
+          <article><h3>Cut list and DXF</h3><p>Per-slab drawings and tables for the workshop, and a millimetre DXF for CNC and bridge saws.</p></article>
+          <article><h3>Quotes</h3><p>Your prices per m², per metre of sawing, mitre and edge, and per cut-out — with VAT.</p></article>
+          <article><h3>Desktop and web, synced</h3><p>Work offline on Windows or Mac and share projects with your team's online studio.</p></article>
+          <article><h3>Book-matched slabs</h3><p>Mirror a slab's photo to plan book-matched walls and floors.</p></article>
+          <article><h3>Backups with photos</h3><p>Project backups carry their slab photos and open on any computer.</p></article>
+          <article><h3>Private by design</h3><p>The desktop app keeps everything on your computer; the online studio is protected by a team password.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Get it -->
+    <section class="section section-alt" id="download">
+      <div class="wrap">
+        <p class="eyebrow">Download</p>
+        <h2>Get Jeo Stone Studio</h2>
+        <div class="download-grid">
+          <a class="download-card" data-download="windows" href="#">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.5 4.5v7H3zM11.5 4.4 21 3v8.5h-9.5zM3 12.5h7.5v7L3 18.5zM11.5 12.5H21V21l-9.5-1.4z" fill="currentColor"/></svg>
+            <b>Windows</b>
+            <span>Windows 10 / 11, 64-bit · about 135 MB</span>
+          </a>
+          <a class="download-card" data-download="mac" href="#">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.8-1.7 0-3.2 1-4 2.4-1.8 3-.5 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.5 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.5-1-2.5-3.9zM14 5.2c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1 .1 2.1-.6 2.8-1.4z" fill="currentColor"/></svg>
+            <b>Mac</b>
+            <span>macOS 12 or newer · Apple Silicon (M1–M4) and Intel</span>
+          </a>
+        </div>
+        <div class="install-help">
+          <details>
+            <summary>Windows says “Windows protected your PC”</summary>
+            <p>Click <b>More info</b>, then <b>Run anyway</b>. The message appears for new programs until they are signed; your projects are not affected.</p>
+          </details>
+          <details>
+            <summary>Mac says the app “cannot be opened”</summary>
+            <p>Right-click (or Control-click) the app in Applications and choose <b>Open</b>, then <b>Open</b> again. You only need to do this the first time.</p>
+          </details>
+        </div>
+        <div class="licence">
+          <div>
+            <h3>Licences, training and teams</h3>
+            <p>Download the studio and try it on your own slabs. For licences, an online studio for your team, or a guided setup in your workshop, get in touch.</p>
+          </div>
+          <a class="btn btn-primary" href="#contact">Talk to us</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section" id="faq">
+      <div class="wrap narrow">
+        <p class="eyebrow">Questions</p>
+        <h2>Frequently asked</h2>
+        <div class="faq">
+          <details><summary>Do I need an internet connection?</summary><p>No. The desktop app works fully offline and keeps projects and slab photos on your computer. The internet is only needed if you sync with an online studio.</p></details>
+          <details><summary>What kind of photo do I need?</summary><p>A normal phone photo showing the whole slab. It does not have to be taken straight on: the corners are found automatically and the photo is straightened. A contrasting background (sky, ground, wall) helps. Then enter the slab's measured width, height and thickness.</p></details>
+          <details><summary>Is it a CNC program?</summary><p>It is a planning studio. It exports a DXF in millimetres and printable cut lists for your CNC, bridge saw or operator. Always confirm measurements on site before cutting.</p></details>
+          <details><summary>Which file types can I export?</summary><p>Cut list as PDF, DXF for CAD and saws, 3D models as GLB (Windows, Blender, SketchUp) and USDZ (iPhone and iPad AR), an SVG of the assembly, and project backups that include the slab photos.</p></details>
+          <details><summary>Can my team share projects?</summary><p>Yes. An online studio protected by a team password can be shared by the office, and the desktop app uploads and downloads projects with their photos.</p></details>
+          <details><summary>Does it work on phones and tablets?</summary><p>The online studio works in the browser on phones and tablets, with large touch controls for placing pieces in the assembly. The desktop app runs on Windows and Mac.</p></details>
+          <details><summary>What units does it use?</summary><p>Millimetres throughout, with areas in square metres.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact -->
+    <section class="section section-alt" id="contact">
+      <div class="wrap narrow contact">
+        <p class="eyebrow">Contact</p>
+        <h2>Talk to us</h2>
+        <p class="lead">Questions about the studio, a licence for your workshop, or help with a tricky slab — send us a message.</p>
+        <div class="contact-actions" data-contact></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <a class="brand" href="#top"><img src="favicon.svg" alt="" width="28" height="28" /><span><b>JEO</b> STONE STUDIO</span></a>
+      <nav aria-label="Footer">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="#faq">FAQ</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <p>© <span data-year>2026</span> Jeo Stone Studio. Planning documents; confirm measurements on site before cutting.</p>
+    </div>
+  </footer>
+
+  <script src="site.js"></script>
+</body>
+</html>

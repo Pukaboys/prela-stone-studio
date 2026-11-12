@@ -103,9 +103,13 @@ export default function SlabCanvas({
           shapePath = pathD(pieceOutline(p).map(m.local)),
           holePath = pieceHoles(p).map((h) => pathD(h.map(m.local))).join(""),
           plain = (!p.shape || p.shape.kind === "rect") && angle % 90 === 0,
+          // Thin pieces (edge strips, aprons) get a label that fits inside them.
+          thin = f.h < 200,
+          labelH = thin ? Math.max(18, Math.min(120, f.h - 8)) : 120,
+          labelFont = labelH * 0.46,
           labelW = Math.max(0, Math.min(f.w - 36, 510)),
-          labelX = plain ? 18 : (f.w - labelW) / 2,
-          labelY = plain ? 18 : f.h / 2 - 60,
+          labelX = plain || thin ? 18 : (f.w - labelW) / 2,
+          labelY = thin ? (f.h - labelH) / 2 : plain ? 18 : f.h / 2 - 60,
           index = pr.pieces.indexOf(p) + 1;
         return (
           <g
@@ -168,14 +172,15 @@ export default function SlabCanvas({
                   x={labelX}
                   y={labelY}
                   width={labelW}
-                  height={120}
-                  rx={12}
+                  height={labelH}
+                  rx={Math.min(12, labelH / 3)}
                   fill="#14201fe8"
                 />
-                <text x={labelX + 27} y={labelY + 79} fontSize={55} fill={p.color}>
+                <text x={labelX + labelFont * 0.5} y={labelY + labelH * 0.66} fontSize={labelFont} fill={p.color}>
                   {String(index).padStart(2, "0")} · {p.name}
+                  {thin ? `  ·  ${p.w} × ${p.h}` : ""}
                 </text>
-                <text
+                {!thin && <text
                   x={f.w / 2}
                   y={f.h - 35}
                   textAnchor="middle"
@@ -187,7 +192,7 @@ export default function SlabCanvas({
                 >
                   {p.w} × {p.h}
                   {angle ? ` · ${angle}°` : ""}
-                </text>
+                </text>}
               </>
             )}
             {selected === p.id &&
