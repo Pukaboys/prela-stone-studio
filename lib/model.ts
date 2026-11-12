@@ -4,7 +4,6 @@ import {
   holeOutline,
   pieceOutline,
   roundedRect,
-  toFootprint,
   tooClose,
   validShape,
   type HoleKind,
@@ -66,7 +65,10 @@ export type Piece = {
   rx?: number;
   ry?: number;
   rz?: number;
+  /** Legacy 90° turn on the slab; superseded by `slabAngle` when that is set. */
   rot: boolean;
+  /** Rotation on the slab in degrees (clockwise on screen), any angle. */
+  slabAngle?: number;
   cutAngle?: CutAngle;
   holeW: number;
   holeH: number;
@@ -220,11 +222,80 @@ export function slabImageRect(slab: Slab) {
     h: slab.h / c.h,
   };
 }
-export const footprint = (p: Piece) => ({
-  w: p.rot ? p.h : p.w,
-  h: p.rot ? p.w : p.h,
-});
-export function opening(p: Piece, onSlab = false) {
+/** The piece's rotation on the slab in degrees, normalised to (-180, 180]. */
+export function slabAngleOf(p: Pick<Piece, "rot" | "slabAngle">) {
+  const a = p.slabAngle ?? (p.rot ? 90 : 0);
+  const n = ((((a + 180) % 360) + 360) % 360) - 180;
+  return n === -180 ? 180 : Math.round(n * 100) / 100;
+}
+
+/** cos/sin with exact values at multiples of 90° (no 6e-17 noise in sizes). */
+function trig(deg: number) {
+  const q = ((Math.round(deg) % 360) + 360) % 360;
+  if (Math.abs(deg - Math.round(deg)) < 1e-9 && q % 90 === 0)
+    return { c: [1, 0, -1, 0][q / 90], s: [0, 1, 0, -1][q / 90] };
+  const r = (deg * Math.PI) / 180;
+  return { c: Math.cos(r), s: Math.sin(r) };
+}
+
+/**
+ * How a piece sits on its slab: the outline is rotated by the slab angle and
+ * (x, y) is the top-left corner of the rotated outline's bounding box (the
+ * footprint). At 90° this matches the legacy `rot` placement exactly.
+ */
+export function placement(p: Piece) {
+  const { c, s } = trig(slabAngleOf(p));
+  const turn = (q: Pt) => ({ x: q.x * c - q.y * s, y: q.x * s + q.y * c });
+  const pts = pieceOutline(p).map(turn);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const q of pts) {
+    minX = Math.min(minX, q.x); minY = Math.min(minY, q.y);
+    maxX = Math.max(maxX, q.x); maxY = Math.max(maxY, q.y);
+  }
+  const clean = (n: number) => Math.round(n * 1e6) / 1e6;
+  return {
+    cos: c,
+    sin: s,
+    w: clean(maxX - minX),
+    h: clean(maxY - minY),
+    /** Piece-local point → footprint coordinates (relative to p.x, p.y). */
+    local: (q: Pt) => {
+      const k = turn(q);
+      return { x: k.x - minX, y: k.y - minY };
+    },
+    /** Piece-local point → slab millimetres. */
+    slab: (q: Pt) => {
+      const k = turn(q);
+      return { x: p.x + k.x - minX, y: p.y + k.y - minY };
+    },
+    /** Translation of the piece origin on the slab (slab = origin + R·q). */
+    origin: { x: p.x - minX, y: p.y - minY },
+  };
+}
+
+/** Size of the piece's rotated bounding box on the slab. */
+export const footprint = (p: Piece) => {
+  const m = placement(p);
+  return { w: m.w, h: m.h };
+};
+
+/**
+ * Rotate a piece on the slab to `angle` degrees, keeping the centre of its
+ * footprint in place. Returns the values to patch.
+ */
+export function rotateOnSlab(p: Piece, angle: number): Partial<Piece> {
+  const before = footprint(p);
+  const next = { ...p, slabAngle: angle, rot: false };
+  const after = footprint(next);
+  return {
+    slabAngle: slabAngleOf(next),
+    rot: false,
+    x: Math.round((p.x + before.w / 2 - after.w / 2) * 10) / 10,
+    y: Math.round((p.y + before.h / 2 - after.h / 2) * 10) / 10,
+  };
+}
+
+export function opening(p: Piece) {
   const x =
       p.holeDX !== undefined
         ? p.holeEdgeX === "right"
@@ -237,10 +308,7 @@ export function opening(p: Piece, onSlab = false) {
           ? p.holeDY
           : p.h - p.holeDY - p.holeH
         : (p.h - p.holeH) / 2 + (p.holeY ?? 0);
-  if (!onSlab) return { x, y, w: p.holeW, h: p.holeH };
-  return p.rot
-    ? { x: p.x + p.h - y - p.holeH, y: p.y + x, w: p.holeH, h: p.holeW }
-    : { x: p.x + x, y: p.y + y, w: p.holeW, h: p.holeH };
+  return { x, y, w: p.holeW, h: p.holeH };
 }
 /** Space the magnetic snap leaves between neighbouring pieces on a slab. */
 export const SNAP_GAP = 4;
@@ -369,12 +437,10 @@ export function pieceArea(p: Piece) {
   return Math.max(0, area(pieceOutline(p)) - (hole ? area(hole) : 0));
 }
 
-/** Piece outline in slab millimetres (position and 90° rotation applied). */
+/** Piece outline in slab millimetres (position and rotation applied). */
 export function outlineOnSlab(p: Piece): Pt[] {
-  return pieceOutline(p).map((q) => {
-    const f = toFootprint(p, q);
-    return { x: p.x + f.x, y: p.y + f.y };
-  });
+  const m = placement(p);
+  return pieceOutline(p).map(m.slab);
 }
 
 /**
@@ -462,9 +528,11 @@ export function validProject(p: any): p is Project {
         typeof q.name === "string" &&
         p.slabs.some((s: any) => s.id === q.slab) &&
         [q.w, q.h].every((n) => Number.isFinite(n) && n > 0 && n <= 20000) &&
-        [q.x, q.y, q.ax, q.ay, q.holeW, q.holeH].every(
+        [q.ax, q.ay, q.holeW, q.holeH].every(
           (n) => Number.isFinite(n) && n >= 0 && n <= 50000,
         ) &&
+        // A rotated piece may overhang the slab edge (flagged by the checks).
+        [q.x, q.y].every((n) => Number.isFinite(n) && n >= -20000 && n <= 50000) &&
         [q.holeX, q.holeY].every(
           (n) =>
             n === undefined || (Number.isFinite(n) && Math.abs(n) <= 20000),
@@ -483,6 +551,7 @@ export function validProject(p: any): p is Project {
           (n) => n === undefined || (Number.isFinite(n) && Math.abs(n) <= 360),
         ) &&
         typeof q.rot === "boolean" &&
+        (q.slabAngle === undefined || (Number.isFinite(q.slabAngle) && Math.abs(q.slabAngle) <= 360)) &&
         (q.cutAngle === undefined || [0, 45].includes(q.cutAngle)) &&
         /^#[0-9a-f]{6}$/i.test(q.color),
     ) &&

@@ -24,8 +24,9 @@ export default function Num({
   /** Hide the visible label (still used as the accessible name). */
   compact?: boolean;
 }) {
-  // `draft` is null while the field is not being edited, so it always shows
-  // the committed value; while focused it holds whatever the user typed.
+  // `draft` holds what the user is typing; it is null until they type, so a
+  // focused field still follows the value when something else changes it
+  // (e.g. the 45° chamfer button or the assembly pad).
   const [draft, setDraft] = useState<string | null>(null);
   const text = draft ?? String(value);
   const parsed = Number(text);
@@ -44,7 +45,6 @@ export default function Num({
           value={text}
           aria-invalid={invalid || undefined}
           title={`${min} – ${max} ${unit}`}
-          onFocus={() => setDraft(String(value))}
           onChange={(e) => {
             const next = e.target.value;
             setDraft(next);

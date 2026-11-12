@@ -6,7 +6,7 @@ import HolePosition, { HoleShapePicker } from "@/components/hole-position";
 import ShapeThumb from "@/components/shape-thumb";
 import ShapeEditor from "@/components/shape-editor";
 import ShapeScanner, { type ScannedShape } from "@/components/shape-scanner";
-import { SHAPE_LABEL, pathD, pieceOutline, toFootprint } from "@/lib/shapes";
+import { SHAPE_LABEL, pathD, pieceOutline } from "@/lib/shapes";
 import PiecesPage from "@/components/pieces-page";
 import AssemblyPad, { applyDelta } from "@/components/assembly-pad";
 import type { ModelFormat } from "@/lib/export-3d";
@@ -53,6 +53,9 @@ import {
   pieceGap,
   findFreeSpot,
   removeSlab,
+  placement,
+  rotateOnSlab,
+  slabAngleOf,
   pieceArea,
   pieceHole,
   nudgeHole,
@@ -771,6 +774,38 @@ export default function Studio() {
       toast.error(String(e));
     }
   }
+  // Scroll over a piece on the slab to rotate it (5°, Shift 1°, Ctrl/⌘ 15°).
+  // A burst of wheel steps is one undo step.
+  const slabSvg = useRef<SVGSVGElement>(null);
+  const lastWheel = useRef(0);
+  const wheelRotate = useRef<(id: string, e: WheelEvent) => void>(() => {});
+  wheelRotate.current = (id, e) => {
+    const p = current.current.pieces.find((q) => q.id === id);
+    const delta = Math.sign(e.deltaY || e.deltaX);
+    if (!p || !delta) return;
+    const step = e.shiftKey ? 1 : e.ctrlKey || e.metaKey ? 15 : 5;
+    const angle = Math.round((slabAngleOf(p) + delta * step) / step) * step;
+    const now = Date.now();
+    if (now - lastWheel.current > 700) checkpoint();
+    lastWheel.current = now;
+    change((pr) => ({ ...pr, pieces: pr.pieces.map((q) => (q.id === id ? { ...q, ...rotateOnSlab(q, angle) } : q)) }), false);
+    if (selected !== id) {
+      setSelected(id);
+      setSid(p.slab);
+    }
+  };
+  useEffect(() => {
+    const svg = slabSvg.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      const g = (e.target as Element | null)?.closest?.("[data-piece]");
+      if (!g) return; // not over a piece: scroll the page as usual
+      e.preventDefault();
+      wheelRotate.current(g.getAttribute("data-piece")!, e);
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [view]);
   const shortcut = useRef<(e: KeyboardEvent) => void>(() => {});
   shortcut.current = (e) => {
     const mod = e.ctrlKey || e.metaKey,
@@ -1092,6 +1127,7 @@ export default function Studio() {
                 </div>
                 <ZoomBoard zoom={zoom}>
                   <svg
+                    ref={slabSvg}
                     className="slab-svg"
                     viewBox={`-130 -140 ${slab.w + 260} ${slab.h + 280}`}
                     role="img"
@@ -1149,11 +1185,13 @@ export default function Studio() {
                       ))}
                     {slabPieces.map((p) => {
                       // Draw the slab footprint: a 90° rotated piece occupies h × w.
-                      const f = footprint(p),
-                        shapePath = pathD(pieceOutline(p).map((q) => toFootprint(p, q))),
+                      const m = placement(p),
+                        f = { w: m.w, h: m.h },
+                        angle = slabAngleOf(p),
+                        shapePath = pathD(pieceOutline(p).map(m.local)),
                         holePts = pieceHole(p),
-                        holePath = holePts ? pathD(holePts.map((q) => toFootprint(p, q))) : "",
-                        plain = !p.shape || p.shape.kind === "rect",
+                        holePath = holePts ? pathD(holePts.map(m.local)) : "",
+                        plain = (!p.shape || p.shape.kind === "rect") && angle % 90 === 0,
                         labelW = Math.max(0, Math.min(f.w - 36, 510)),
                         labelX = plain ? 18 : (f.w - labelW) / 2,
                         labelY = plain ? 18 : f.h / 2 - 60,
@@ -1162,6 +1200,7 @@ export default function Studio() {
                         <g
                           key={p.id}
                           transform={`translate(${p.x} ${p.y})`}
+                          data-piece={p.id}
                           tabIndex={0}
                           role="button"
                           aria-label={p.name + " position"}
@@ -1227,7 +1266,7 @@ export default function Studio() {
                                 paintOrder="stroke"
                               >
                                 {p.w} × {p.h}
-                                {p.rot ? " · 90°" : ""}
+                                {angle ? ` · ${angle}°` : ""}
                               </text>
                             </>
                           )}
@@ -1385,11 +1424,11 @@ export default function Studio() {
                                 width={img.w}
                                 height={img.h}
                                 preserveAspectRatio="none"
-                                transform={
-                                  p.rot
-                                    ? `matrix(0 -1 1 0 ${-p.y} ${p.x + p.h})`
-                                    : `translate(${-p.x} ${-p.y})`
-                                }
+                                transform={(() => {
+                                  // slab = origin + R·piece  →  piece = Rᵀ·(slab − origin)
+                                  const m = placement(p), c = m.cos, n = m.sin, o = m.origin;
+                                  return `matrix(${c} ${-n} ${n} ${c} ${-(c * o.x + n * o.y)} ${n * o.x - c * o.y})`;
+                                })()}
                               />
                             </g>
                             <path
@@ -1557,16 +1596,31 @@ export default function Studio() {
                 </button>
               )}
               <div className="twocol">
-                <Num label="X" value={piece.x} onChange={(x) => patch({ x })} />
-                <Num label="Y" value={piece.y} onChange={(y) => patch({ y })} />
+                <Num label="X" value={piece.x} min={-20000} onChange={(x) => patch({ x })} />
+                <Num label="Y" value={piece.y} min={-20000} onChange={(y) => patch({ y })} />
               </div>
-              <button
-                className="fullbutton"
-                onClick={() => patch({ rot: !piece.rot })}
-              >
-                <RotateCw size={16} /> Rotate piece 90°{" "}
-                <span>{piece.rot ? "90°" : "0°"}</span>
-              </button>
+              <div className="slab-angle">
+                <Num
+                  label="Angle on slab"
+                  unit="°"
+                  min={-180}
+                  max={180}
+                  value={slabAngleOf(piece)}
+                  onChange={(a) => patch(rotateOnSlab(piece, a))}
+                />
+                <button
+                  type="button"
+                  title="Reset the angle to 0°"
+                  disabled={!slabAngleOf(piece)}
+                  onClick={() => patch(rotateOnSlab(piece, 0))}
+                >
+                  <RotateCw size={15} /> 0°
+                </button>
+              </div>
+              <p className="hint">
+                Scroll over the piece on the slab to rotate it: 5° per step,
+                Shift for 1°, Ctrl for 15°.
+              </p>
               <h3>Blade cut angle</h3>
               <div className="angle-options">
                 {([0, 45] as CutAngle[]).map((angle) => (
@@ -1975,6 +2029,8 @@ export default function Studio() {
               <dd>Save project</dd>
               <dt><kbd>Ctrl</kbd><kbd>D</kbd></dt>
               <dd>Duplicate selected piece</dd>
+              <dt><kbd>Scroll</kbd></dt>
+              <dd>Rotate the piece under the pointer on the slab (Shift 1°, Ctrl 15°)</dd>
               <dt><kbd>Del</kbd></dt>
               <dd>Delete selected piece</dd>
             </dl>

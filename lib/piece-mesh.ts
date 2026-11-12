@@ -4,7 +4,7 @@
  * Units are millimetres; the assembly floor is the XZ plane, Y is up.
  */
 import type * as ThreeModule from "three";
-import { pieceHole, slabCrop, type Piece, type Slab } from "@/lib/model";
+import { pieceHole, placement, slabCrop, type Piece, type Slab } from "@/lib/model";
 import { containsPolygon, pieceOutline } from "@/lib/shapes";
 
 type Three = typeof ThreeModule;
@@ -27,15 +27,15 @@ export function buildPieceGeometry(THREE: Three, piece: Piece, slab: Slab) {
     steps: 1,
   });
   // Map piece millimetres to where the piece sits on the slab photo (honouring
-  // the 90° rotation and the photo crop) so the veins match the slab layout.
+  // its rotation on the slab and the photo crop) so the veins match the layout.
+  const onSlab = placement(piece).slab;
   const positions = geometry.getAttribute("position"),
     uv = geometry.getAttribute("uv"),
     crop = slabCrop(slab);
   for (let i = 0; i < positions.count; i++) {
     const x = positions.getX(i),
       y = -positions.getY(i);
-    const sx = piece.rot ? piece.x + piece.h - y : piece.x + x;
-    const sy = piece.rot ? piece.y + x : piece.y + y;
+    const { x: sx, y: sy } = onSlab({ x, y });
     uv.setXY(i, crop.x + (sx / slab.w) * crop.w, 1 - (crop.y + (sy / slab.h) * crop.h));
   }
   uv.needsUpdate = true;

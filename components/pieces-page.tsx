@@ -10,14 +10,13 @@ import {
   Copy,
   Crosshair,
   Plus,
-  RotateCw,
   ScanLine,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
 import Num from "@/components/num-field";
 import HolePosition from "@/components/hole-position";
-import { hasIssue, pieceAngle, pieceArea, type Issue, type Piece, type Project } from "@/lib/model";
+import { hasIssue, pieceAngle, pieceArea, rotateOnSlab, slabAngleOf, type Issue, type Piece, type Project } from "@/lib/model";
 import { SHAPE_LABEL } from "@/lib/shapes";
 import ShapeThumb from "@/components/shape-thumb";
 import { HoleShapePicker } from "@/components/hole-position";
@@ -123,7 +122,7 @@ export default function PiecesPage({
             <span role="columnheader">Shape</span>
             <span role="columnheader">Width × height</span>
             <span role="columnheader">Slab</span>
-            <span role="columnheader">Orientation</span>
+            <span role="columnheader">Angle on slab</span>
             <span role="columnheader">Edge cut</span>
             <span role="columnheader">Opening W × H</span>
             <span role="columnheader">Opening distance from edge</span>
@@ -195,15 +194,16 @@ export default function PiecesPage({
                     ))}
                   </select>
                 </span>
-                <span role="cell" data-label="Orientation">
-                  <button
-                    className={"pc-toggle" + (p.rot ? " on" : "")}
-                    aria-pressed={p.rot}
-                    title="Rotate the piece 90° on the slab"
-                    onClick={() => onPatch(p, { rot: !p.rot })}
-                  >
-                    <RotateCw size={14} /> {p.rot ? "90°" : "0°"}
-                  </button>
+                <span role="cell" data-label="Angle on slab">
+                  <Num
+                    compact
+                    label={`Angle of ${p.name} on the slab`}
+                    unit="°"
+                    min={-180}
+                    max={180}
+                    value={slabAngleOf(p)}
+                    onChange={(angle) => onPatch(p, rotateOnSlab(p, angle))}
+                  />
                 </span>
                 <span role="cell" data-label="Edge cut">
                   <div className="pc-seg" role="group" aria-label={`Edge cut for ${p.name}`}>

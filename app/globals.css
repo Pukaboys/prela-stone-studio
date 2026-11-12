@@ -278,7 +278,7 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .pieces-summary em{font-style:normal;font-size:12px;color:#93a4ac}
 .pieces-summary .ok b{color:#bfdc9d;font-size:14px}.pieces-summary .warn b{color:#efbc80;font-size:14px}
 .pieces-table{border:1px solid #354148;border-radius:9px;overflow:auto;background:#1b2328}
-.pieces-row{display:grid;grid-template-columns:62px minmax(140px,1.3fr) 150px minmax(190px,1.3fr) minmax(140px,1fr) 78px 92px minmax(190px,1.2fr) minmax(240px,1.4fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1410px}
+.pieces-row{display:grid;grid-template-columns:62px minmax(140px,1.3fr) 150px minmax(190px,1.3fr) minmax(140px,1fr) 100px 92px minmax(190px,1.2fr) minmax(240px,1.4fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1432px}
 .pieces-row:first-child{border-top:0}
 .pieces-header{background:#202a30;font-size:11.5px;color:#93a4ac;letter-spacing:.02em;padding-top:11px;padding-bottom:11px;position:sticky;top:0;z-index:1}
 .pieces-row:not(.pieces-header):hover{background:#1f292e}
@@ -466,3 +466,18 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
   .corner-grid{grid-template-columns:1fr}
   .shape-preview svg{height:36vh}
 }
+
+/* Chamfer: lengths, angle and a 45° shortcut */
+.chamfer-control{display:grid;gap:7px}
+.chamfer-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.chamfer-angle{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:end}
+.chamfer-fields .field>span,.chamfer-angle .field>span{font-size:11px;margin-bottom:4px}
+.chamfer-fields .field>div input,.chamfer-angle .field>div input{padding:7px 4px 7px 8px;font-size:12.5px}
+.chamfer-fields .field>div small{padding-right:5px;font-size:10px}
+.chamfer-45{padding:7px 14px;margin-bottom:1px;font-size:12px;border-radius:999px;background:transparent}
+.chamfer-45.on{background:#bde96e;border-color:#bde96e;color:#203018}
+
+/* Angle on slab (inspector) */
+.slab-angle{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;margin-bottom:2px}
+.slab-angle .field{margin:0}
+.slab-angle button{padding:10px 12px;font-size:12.5px}

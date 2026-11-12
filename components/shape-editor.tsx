@@ -90,12 +90,48 @@ function CornerControl({
         ))}
       </div>
       {corner.type === "radius" && <Num compact label={`${name} radius`} value={corner.r} onChange={(r) => onChange({ type: "radius", r })} />}
-      {corner.type === "chamfer" && (
-        <div className="twocol">
-          <Num compact label={`${name} chamfer along X`} value={corner.x} onChange={(x) => onChange({ ...corner, x })} />
-          <Num compact label={`${name} chamfer along Y`} value={corner.y} onChange={(y) => onChange({ ...corner, y })} />
-        </div>
-      )}
+      {corner.type === "chamfer" && <ChamferControl name={name} corner={corner} onChange={onChange} />}
+    </div>
+  );
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+/** Chamfer angle in degrees, measured from the horizontal (X) edge: 45° when X = Y. */
+const chamferAngle = (c: { x: number; y: number }) => (c.x > 0 ? round1((Math.atan(c.y / c.x) * 180) / Math.PI) : 90);
+
+/**
+ * Chamfer by two lengths or by length + angle. Changing X keeps the angle,
+ * changing Y or the angle changes the other; "45°" makes both legs equal.
+ */
+function ChamferControl({
+  name,
+  corner,
+  onChange,
+}: {
+  name: string;
+  corner: Extract<Corner, { type: "chamfer" }>;
+  onChange: (c: Corner) => void;
+}) {
+  const angle = chamferAngle(corner);
+  const withAngle = (x: number, deg: number) => ({ type: "chamfer" as const, x, y: round1(x * Math.tan((deg * Math.PI) / 180)) });
+  return (
+    <div className="chamfer-control">
+      <div className="chamfer-fields">
+        <Num label="Along X" value={corner.x} min={0} onChange={(x) => onChange(angle > 0 && angle < 90 ? withAngle(x, angle) : { ...corner, x })} />
+        <Num label="Along Y" value={corner.y} min={0} onChange={(y) => onChange({ ...corner, y })} />
+      </div>
+      <div className="chamfer-angle">
+        <Num label="Angle" unit="°" value={angle} min={1} max={89} onChange={(deg) => onChange(withAngle(corner.x || 100, deg))} />
+      <button
+        type="button"
+        className={"chamfer-45" + (angle === 45 ? " on" : "")}
+        aria-pressed={angle === 45}
+        title={`Make the ${name.toLowerCase()} chamfer exactly 45° (Y = X)`}
+        onClick={() => onChange({ ...corner, y: corner.x })}
+      >
+        45°
+      </button>
+      </div>
     </div>
   );
 }
