@@ -55,3 +55,50 @@ also attaches both installers to a GitHub Release.
 The installers are not code-signed yet. Windows shows "Windows protected your
 PC" (More info → Run anyway); macOS needs right-click → Open the first time.
 The app version is in `desktop/app/package.json`.
+
+## Website password (important)
+
+Set the environment variable `STUDIO_PASSWORD` on the host (Hostinger:
+website → Environment variables) to require a team password. Without it,
+anyone with the address can open, change and overwrite projects. Signing in
+gives a 30-day session; changing the password signs everyone out; repeated
+wrong guesses are blocked for 15 minutes. The desktop app needs no password
+(it only listens on this computer).
+
+## Desktop ↔ website sync
+
+In the desktop app: Projects → Website sync → enter the website address and
+the team password once. Then "Upload this project" sends the open project
+with its slab photos; "Show website projects" lists them for download. The
+same project ID is used on both sides, so uploading again updates the copy.
+
+## Production output
+
+Export → Print cut list / Save PDF (drawing and table per slab), Download DXF
+for CNC / saw (R12, millimetres; layers SLAB, MARGIN, CUT, OPENING,
+MITRE_BELOW, MITRE_ABOVE, TEXT) and Quote… (prices saved with the project).
+Slab layout → Auto-arrange places all pieces; Fix problems moves only pieces
+that overlap, overhang or hit a defect.
+
+## Tests and checks
+
+    pnpm test        # unit tests (geometry, placement, mitres, openings,
+                     # scanner, sign-in, quote/DXF, auto-arrange)
+    pnpm typecheck
+    pnpm lint
+
+GitHub runs all of these plus a production build on every push (.github/workflows/ci.yml).
+
+## Releases, updates and signing
+
+Push a tag such as `v1.0.1` to build the Windows and Mac installers on
+GitHub and attach them to a release. The tag sets the app version; the
+desktop app checks for newer releases on start and in Help → Check for
+Updates. Local builds stay at 1.0.0; the sidebar shows the build date and
+commit so builds can be told apart.
+
+To sign the installers, add these repository secrets (Settings → Secrets →
+Actions): Windows `WIN_CSC_LINK` (base64 .pfx) and `WIN_CSC_KEY_PASSWORD`;
+macOS `MAC_CSC_LINK` (base64 Developer ID .p12), `MAC_CSC_KEY_PASSWORD`,
+`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`. Without them the
+installers are built unsigned.

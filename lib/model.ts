@@ -399,7 +399,11 @@ export function removeSlab(pr: Project, slabId: string): Project {
   return next;
 }
 
-export type Issue = { id: string; related?: string; text: string };
+/**
+ * A check result. `placement` issues (overlap, saw gap, slab edge, defects)
+ * can be fixed by moving pieces; `opening` issues need the piece edited.
+ */
+export type Issue = { id: string; related?: string; text: string; kind?: "placement" | "opening" };
 /** True when a placement issue involves the given piece. */
 export const hasIssue = (list: Issue[], id: string) =>
   list.some((w) => w.id === id || w.related === id);
@@ -524,31 +528,31 @@ export function issues(pr: Project): Issue[] {
       p.x + b.w > s.w - pr.margin ||
       p.y + b.h > s.h - pr.margin
     )
-      out.push({ id: p.id, text: p.name + ": outside usable slab edge" });
+      out.push({ id: p.id, kind: "placement", text: p.name + ": outside usable slab edge" });
     if (p.holeW > 0 !== p.holeH > 0)
-      out.push({ id: p.id, text: p.name + ": invalid opening dimensions" });
+      out.push({ id: p.id, kind: "opening", text: p.name + ": invalid opening dimensions" });
     const shape = pieceOutline(p);
     const holes = openingsOf(p).map((o) => ({ o, pts: holeOutline(openingBox(p, o), o.kind, o.r ?? 0) }));
     holes.forEach(({ o, pts }, n) => {
       const name = `${p.name}: ${o.label || `opening ${n + 1}`}`;
-      if (!(o.w > 0 && o.h > 0) || o.w >= p.w || o.h >= p.h) out.push({ id: p.id, text: name + " has invalid dimensions" });
-      else if (!containsPolygon(shape, pts)) out.push({ id: p.id, text: name + " extends outside the piece" });
+      if (!(o.w > 0 && o.h > 0) || o.w >= p.w || o.h >= p.h) out.push({ id: p.id, kind: "opening", text: name + " has invalid dimensions" });
+      else if (!containsPolygon(shape, pts)) out.push({ id: p.id, kind: "opening", text: name + " extends outside the piece" });
       // Openings need the saw gap between them, too.
       for (let k = n + 1; k < holes.length; k++)
         if (tooClose(pts, holes[k].pts, pr.kerf))
-          out.push({ id: p.id, text: `${name} is too close to ${holes[k].o.label || `opening ${k + 1}`}` });
+          out.push({ id: p.id, kind: "opening", text: `${name} is too close to ${holes[k].o.label || `opening ${k + 1}`}` });
     });
     const mine = outlines.get(p.id)!;
     for (const q of pr.pieces) {
       if (q.id <= p.id || q.slab !== p.slab) continue;
       if (tooClose(mine, outlines.get(q.id)!, pr.kerf)) {
         const text = p.name + " / " + q.name + ": overlap or insufficient blade gap";
-        out.push({ id: p.id, related: q.id, text });
+        out.push({ id: p.id, related: q.id, kind: "placement", text });
       }
     }
     for (const d of pr.defects.filter((d) => d.slab === p.slab)) {
       if (tooClose(mine, roundedRect(d.w, d.h, undefined, d.x, d.y), 0))
-        out.push({ id: p.id, text: p.name + ": intersects a marked defect" });
+        out.push({ id: p.id, kind: "placement", text: p.name + ": intersects a marked defect" });
     }
   }
   return out;

@@ -49,3 +49,23 @@ describe("auto-arrange", () => {
     expect(issues(r.project)).toEqual([]);
   });
 });
+
+describe("auto-arrange ignores opening problems", () => {
+  it("a piece whose openings overlap is not moved", () => {
+    const pr = demo();
+    const counter = pr.pieces[2];
+    pr.pieces[2] = {
+      ...counter,
+      holeW: 0,
+      holeH: 0,
+      openings: [
+        { id: "a", w: 500, h: 380, edgeX: "left", dx: 650, edgeY: "front", dy: 120 },
+        { id: "b", w: 500, h: 380, edgeX: "left", dx: 660, edgeY: "front", dy: 120 },
+      ],
+    };
+    expect(issues(pr).map((i) => i.kind)).toEqual(["opening"]);
+    const r = autoArrange(pr, { onlyProblems: true });
+    expect(r.placed).toBe(0);
+    expect(r.project.pieces[2]).toMatchObject({ x: counter.x, y: counter.y });
+  });
+});

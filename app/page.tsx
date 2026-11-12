@@ -2,13 +2,28 @@
 import { useState, useRef, useEffect } from "react";
 import Assembly3D from "@/components/assembly-3d";
 import Num from "@/components/num-field";
+import Inspector from "@/components/studio/inspector";
+import SlabCanvas from "@/components/studio/slab-canvas";
+import { ChecksContent, DefectsContent, HelpContent } from "@/components/studio/dialogs";
+import { DefectPainter, SlabThumb, ZoomBoard } from "@/components/studio/basics";
+import {
+  BUILD,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  ZOOM_STEP,
+  dialogCopy,
+  saveLabels,
+  type DialogId,
+  type DragState,
+  type ProjectSummary,
+  type SaveState,
+} from "@/lib/studio-config";
 import OpeningsEditor from "@/components/openings-editor";
 import SignIn from "@/components/sign-in";
 import QuotePanel from "@/components/quote-panel";
 import SyncPanel from "@/components/sync-panel";
 import ShapeThumb from "@/components/shape-thumb";
 import EdgeCutsEditor from "@/components/edge-cuts";
-import { edgeCutsOf, mitreStrips } from "@/lib/edges";
 import ShapeEditor from "@/components/shape-editor";
 import ShapeScanner, { type ScannedShape } from "@/components/shape-scanner";
 import { SHAPE_LABEL, pathD, pieceOutline } from "@/lib/shapes";
@@ -19,7 +34,6 @@ import PhotoEditor, { bakeEdit, type EditSettings } from "@/components/photo-edi
 import {
   Plus,
   Upload,
-  RotateCw,
   Undo2,
   Redo2,
   Download,
@@ -33,7 +47,6 @@ import {
   TriangleAlert,
   Maximize2,
   ArrowUpRight,
-  Copy,
   SlidersHorizontal,
   ZoomIn,
   ZoomOut,
@@ -74,119 +87,8 @@ import {
   slabImageRect,
   type Project,
   type Piece,
-  type PhotoCrop,
-  type Defect,
   type Slab,
 } from "@/lib/model";
-/** Slab photo thumbnail with a clear placeholder when the photo is not in this copy. */
-function SlabThumb({ src, alt, mirror }: { src: string; alt: string; mirror?: boolean }) {
-  const [failed, setFailed] = useState(false);
-  if (failed)
-    return (
-      <span className="thumb-missing" role="img" aria-label={`${alt}: photo missing`}>
-        Photo missing
-        <small>Use Replace photo in Slab settings</small>
-      </span>
-    );
-  return <img src={src} alt={alt} className={mirror ? "mirrored" : undefined} onError={() => setFailed(true)} />;
-}
-function ZoomBoard({
-  zoom,
-  children,
-  className = "",
-}: {
-  zoom: number;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  const inner = useRef<HTMLDivElement>(null),
-    [height, setHeight] = useState(0);
-  useEffect(() => {
-    const svg = inner.current?.querySelector("svg");
-    if (!svg) return;
-    const observer = new ResizeObserver(() => setHeight(svg.clientHeight));
-    observer.observe(svg);
-    setHeight(svg.clientHeight);
-    return () => observer.disconnect();
-  }, []);
-  return (
-    <div
-      className={"board-scroll " + className}
-      style={height ? { height } : undefined}
-    >
-      <div
-        ref={inner}
-        className="board-inner zoom-board"
-        style={
-          {
-            width: zoom * 100 + "%",
-            minWidth: 0,
-            height: height ? height * zoom : undefined,
-            "--board-zoom": zoom,
-          } as React.CSSProperties
-        }
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function cropPoint(e: React.PointerEvent<HTMLDivElement>, host: HTMLDivElement) {
-  const r = host.getBoundingClientRect();
-  return {
-    x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
-    y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
-  };
-}
-
-function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: PhotoCrop; defects: Defect[]; onAdd: (defect: Defect) => void }) {
-  const host = useRef<HTMLDivElement>(null), stroke = useRef<{ x: number; y: number }[]>([]), c = crop; const [draft, setDraft] = useState<{ x: number; y: number }[]>([]); const [brush, setBrush] = useState(45);
-  function toSlab(e: React.PointerEvent<HTMLDivElement>) { if (!host.current) return { x: 0, y: 0 }; const p = cropPoint(e, host.current); return { x: p.x * slab.w, y: p.y * slab.h }; }
-  function begin(e: React.PointerEvent<HTMLDivElement>) { stroke.current = [toSlab(e)]; setDraft(stroke.current); host.current?.setPointerCapture(e.pointerId); }
-  function move(e: React.PointerEvent<HTMLDivElement>) { if (!stroke.current.length) return; const p = toSlab(e), last = stroke.current[stroke.current.length - 1]; if (Math.hypot(p.x - last.x, p.y - last.y) < 8) return; stroke.current = [...stroke.current, p]; setDraft(stroke.current); }
-  function finish(e: React.PointerEvent<HTMLDivElement>) { if (stroke.current.length < 2) { stroke.current = []; setDraft([]); return; } const points = stroke.current, xs = points.map((p) => p.x), ys = points.map((p) => p.y); onAdd({ id: crypto.randomUUID(), slab: slab.id, x: Math.min(...xs) - brush / 2, y: Math.min(...ys) - brush / 2, w: Math.max(brush, Math.max(...xs) - Math.min(...xs) + brush), h: Math.max(brush, Math.max(...ys) - Math.min(...ys) + brush), points, brush }); stroke.current = []; setDraft([]); host.current?.releasePointerCapture(e.pointerId); }
-  function line(points: { x: number; y: number }[]) { return points.map((p) => `${p.x},${p.y}`).join(" "); }
-  const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
-  return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%`, transform: slab.mirror ? "scaleX(-1)" : undefined }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
-}
-/** Build stamp (date and commit) injected at build time; "dev" in tests. */
-const BUILD = typeof __BUILD_INFO__ !== "undefined" ? __BUILD_INFO__ : { commit: "dev", date: "" };
-
-type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "quote" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
-const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
-  slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
-  photo: { title: "Adjust slab photo", description: "Straighten, correct perspective and frame the slab edges." },
-  shape: { title: "Piece shape", description: "Rectangle with shaped corners, circle, arch, curved band or free form." },
-  scan: { title: "Scan shapes", description: "Trace pieces from a photo of templates or a drawing." },
-  edges: { title: "Edge cuts", description: "Straight or 45° mitre on each side, below or above." },
-  openings: { title: "Openings", description: "Sinks, tap holes, hobs and other cut-outs, positioned from the edges." },
-  quote: { title: "Quote", description: "Prices per m², per metre of edge and per cut-out; totals update as you type." },
-  projects: { title: "Your projects", description: "Saved projects are available when you return." },
-  export: { title: "Export project", description: "Keep a project file or share the planned layout." },
-  checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
-  help: { title: "From slab to finished surface", description: "Plan the pattern before you make the cut." },
-  defects: { title: "Marked defects", description: "Mark damaged areas so placement checks keep pieces clear of them." },
-};
-type SaveState = "new" | "dirty" | "saved";
-const saveLabels: Record<SaveState, string> = {
-  new: "Not saved yet",
-  dirty: "Unsaved changes",
-  saved: "All changes saved",
-};
-type ProjectSummary = { id: string; name: string; updated: string };
-type DragState = {
-  id: string;
-  assembly: boolean;
-  start: { x: number; y: number };
-  x: number;
-  y: number;
-  recorded: boolean;
-};
-const ZOOM_MIN = 0.5,
-  ZOOM_MAX = 3,
-  ZOOM_STEP = 0.25;
-
 /**
  * Entry: when the website has a team password (STUDIO_PASSWORD), show the
  * sign-in screen until this browser has a session; otherwise open directly.
@@ -221,7 +123,8 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
   const replacePhoto = useRef(false);
   const past = useRef<Project[]>([]),
     future = useRef<Project[]>([]),
-    [historyTick, historyUpdate] = useState(0),
+    // Re-render when undo/redo history changes (the stacks live in refs).
+    [, historyUpdate] = useState(0),
     file = useRef<HTMLInputElement>(null),
     jsonFile = useRef<HTMLInputElement>(null),
     drag = useRef<DragState | null>(null),
@@ -413,7 +316,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
     const r = autoArrange(current.current, { onlyProblems });
     if (!r.placed && !r.unplaced.length) return;
     change(() => r.project);
-    const left = issues(r.project).length;
+    const left = issues(r.project).filter((i) => i.kind === "placement").length;
     const msg = `${r.placed} piece${r.placed === 1 ? "" : "s"} placed${r.unplaced.length ? `; no room for ${r.unplaced.join(", ")}` : ""}`;
     if (r.unplaced.length || left) toast.warning(msg, { description: left ? `${left} placement issue${left === 1 ? "" : "s"} left. Add a slab or resize pieces.` : undefined, action: { label: "Undo", onClick: () => undo() } });
     else toast.success(msg, { action: { label: "Undo", onClick: () => undo() } });
@@ -1203,7 +1106,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                     <button
                       className="quiet"
                       title="Move only pieces that overlap, overhang or hit a defect"
-                      disabled={!warnings.length}
+                      disabled={!warnings.some((w) => w.kind === "placement")}
                       onClick={() => arrange(true)}
                     >
                       <Wand2 size={15} /> Fix problems
@@ -1214,181 +1117,20 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                   </div>
                 </div>
                 <ZoomBoard zoom={zoom}>
-                  <svg
-                    ref={slabSvg}
-                    className="slab-svg"
-                    viewBox={`-130 -140 ${slab.w + 260} ${slab.h + 280}`}
-                    role="img"
-                    aria-label="Slab layout. Drag pieces or use arrow keys to position them."
-                  >
-                    <text
-                      x={slab.w / 2}
-                      y={-65}
-                      textAnchor="middle"
-                      className="ruler"
-                    >
-                      {slab.w} mm
-                    </text>
-                    <text
-                      transform={`translate(-70 ${slab.h / 2}) rotate(-90)`}
-                      textAnchor="middle"
-                      className="ruler"
-                    >
-                      {slab.h} mm
-                    </text>
-                    <defs><clipPath id={`slab-clip-${slab.id}`}><rect x={0} y={0} width={slab.w} height={slab.h} /></clipPath></defs>
-                    <image
-                      href={slab.image}
-                      x={slabImage.x}
-                      y={slabImage.y}
-                      width={slabImage.w}
-                      height={slabImage.h}
-                      preserveAspectRatio="none"
-                      transform={slab.mirror ? `matrix(-1 0 0 1 ${slab.w} 0)` : undefined}
-                      clipPath={`url(#slab-clip-${slab.id})`}
-                    />
-                    <rect
-                      x={pr.margin}
-                      y={pr.margin}
-                      width={Math.max(0, slab.w - pr.margin * 2)}
-                      height={Math.max(0, slab.h - pr.margin * 2)}
-                      fill="none"
-                      stroke="#242b2b"
-                      strokeWidth={4}
-                      strokeDasharray="18 14"
-                    />
-                    {pr.defects
-                      .filter((d) => d.slab === slab.id)
-                      .map((d) => (
-                        <g key={d.id}>
-                          {d.points?.length ? <polyline points={d.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#ee4545" strokeWidth={d.brush ?? 80} strokeLinecap="round" strokeLinejoin="round" /> : <rect x={d.x} y={d.y} width={d.w} height={d.h} fill="#e45d5d99" stroke="#ee4545" strokeWidth={6} />}
-                          <text
-                            x={d.x + 10}
-                            y={d.y + 60}
-                            fontSize={45}
-                            fill="white"
-                          >
-                            DEFECT
-                          </text>
-                        </g>
-                      ))}
-                    {slabPieces.map((p) => {
-                      // Draw the slab footprint: a 90° rotated piece occupies h × w.
-                      const m = placement(p),
-                        f = { w: m.w, h: m.h },
-                        angle = slabAngleOf(p),
-                        shapePath = pathD(pieceOutline(p).map(m.local)),
-                        holePath = pieceHoles(p).map((h) => pathD(h.map(m.local))).join(""),
-                        plain = (!p.shape || p.shape.kind === "rect") && angle % 90 === 0,
-                        labelW = Math.max(0, Math.min(f.w - 36, 510)),
-                        labelX = plain ? 18 : (f.w - labelW) / 2,
-                        labelY = plain ? 18 : f.h / 2 - 60,
-                        index = pr.pieces.indexOf(p) + 1;
-                      return (
-                        <g
-                          key={p.id}
-                          transform={`translate(${p.x} ${p.y})`}
-                          data-piece={p.id}
-                          tabIndex={0}
-                          role="button"
-                          aria-label={p.name + " position"}
-                          onKeyDown={(e) => keys(e, p)}
-                          onPointerDown={(e) => start(e, p)}
-                          onPointerMove={move}
-                          onPointerUp={() => (drag.current = null)}
-                          onPointerCancel={() => (drag.current = null)}
-                          className="draggable"
-                        >
-                          {!plain && (
-                            <rect
-                              width={f.w}
-                              height={f.h}
-                              fill="none"
-                              stroke={p.color}
-                              strokeOpacity={0.35}
-                              strokeWidth={3}
-                              strokeDasharray="10 10"
-                            />
-                          )}
-                          <path
-                            d={shapePath}
-                            fill={p.color}
-                            fillOpacity={selected === p.id ? 0.24 : 0.1}
-                            stroke={
-                              hasIssue(warnings, p.id)
-                                ? "#f46d68"
-                                : p.color
-                            }
-                            strokeWidth={selected === p.id ? 10 : 5}
-                          />
-                          {mitreStrips(pieceOutline(p), edgeCutsOf(p), pr.slabs.find((x) => x.id === p.slab)?.thickness ?? 20).map((st, k) => (
-                            <path
-                              key={"m" + k}
-                              d={pathD(st.pts.map(m.local))}
-                              className={"mitre-strip " + st.cut}
-                            >
-                              <title>{st.cut === "below" ? "45° mitre below" : "45° mitre above"}</title>
-                            </path>
-                          ))}
-                          {holePath && (
-                            <path
-                              d={holePath}
-                              fill="#151b1f99"
-                              stroke={p.color}
-                              strokeWidth={5}
-                              strokeDasharray="12 8"
-                            />
-                          )}
-                          {showLabels && (
-                            <>
-                              <rect
-                                x={labelX}
-                                y={labelY}
-                                width={labelW}
-                                height={120}
-                                rx={12}
-                                fill="#14201fe8"
-                              />
-                              <text x={labelX + 27} y={labelY + 79} fontSize={55} fill={p.color}>
-                                {String(index).padStart(2, "0")} · {p.name}
-                              </text>
-                              <text
-                                x={f.w / 2}
-                                y={f.h - 35}
-                                textAnchor="middle"
-                                fontSize={43}
-                                fill="#151c1c"
-                                stroke="white"
-                                strokeWidth={3}
-                                paintOrder="stroke"
-                              >
-                                {p.w} × {p.h}
-                                {angle ? ` · ${angle}°` : ""}
-                              </text>
-                            </>
-                          )}
-                          {selected === p.id &&
-                            [
-                              [0, 0],
-                              [f.w, 0],
-                              [0, f.h],
-                              [f.w, f.h],
-                            ].map(([x, y], i) => (
-                              <rect
-                                key={i}
-                                x={x - 15}
-                                y={y - 15}
-                                width={30}
-                                height={30}
-                                fill={p.color}
-                                stroke="#172024"
-                                strokeWidth={4}
-                              />
-                            ))}
-                        </g>
-                      );
-                    })}
-                  </svg>
+                  <SlabCanvas
+                    svgRef={slabSvg}
+                    project={pr}
+                    slab={slab}
+                    slabImage={slabImage}
+                    pieces={slabPieces}
+                    selected={selected}
+                    warnings={warnings}
+                    showLabels={showLabels}
+                    onPieceDown={start}
+                    onPieceMove={move}
+                    onPieceUp={() => (drag.current = null)}
+                    onPieceKey={keys}
+                  />
                 </ZoomBoard>
                 <div className="canvascaption">
                   <span>
@@ -1628,7 +1370,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                 <Check size={18} />
               )}{" "}
               {warnings.length
-                ? `${warnings.length} placement issue${warnings.length > 1 ? "s" : ""}`
+                ? `${warnings.length} issue${warnings.length > 1 ? "s" : ""} to check`
                 : "Placement checks passed"}
             </button>
           </div>
@@ -1640,181 +1382,17 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
           </>
           )}
         </section>
-        <aside className="inspector">
-          <div className="panelhead">
-            <h2>Piece properties</h2>
-            <SlidersHorizontal size={17} />
-          </div>
-          {piece ? (
-            <>
-              <div className="selectionlabel">
-                <span style={{ background: piece.color }} /> SELECTED PIECE
-              </div>
-              <label className="field">
-                <span>Name</span>
-                <input
-                  value={piece.name}
-                  onChange={(e) => patch({ name: e.target.value.slice(0, 60) })}
-                />
-              </label>
-              <button className="shape-entry" onClick={() => setDialog("shape")}>
-                <ShapeThumb piece={piece} size={46} />
-                <span>
-                  <b>{SHAPE_LABEL[piece.shape?.kind ?? "rect"]}</b>
-                  <small>Edit shape, corners and curves</small>
-                </span>
-                <ArrowUpRight size={15} />
-              </button>
-              {piece.shape?.kind === "bend" ? (
-                <p className="hint">
-                  Size {piece.w} × {piece.h} mm, set by the curved band&apos;s
-                  values in the shape editor.
-                </p>
-              ) : (
-              <div className="twocol">
-                <Num
-                  label="Width"
-                  value={piece.w}
-                  min={10}
-                  onChange={(w) => patch({ w })}
-                />
-                <Num
-                  label="Height"
-                  value={piece.h}
-                  min={10}
-                  onChange={(h) => patch({ h })}
-                />
-              </div>
-              )}
-              <h3>Position on slab</h3>
-              {piece.slab !== slab.id && (
-                <button
-                  className="fullbutton"
-                  onClick={() => moveToSlab(piece, slab.id)}
-                >
-                  Move to selected slab
-                </button>
-              )}
-              <div className="twocol">
-                <Num label="X" value={piece.x} min={-20000} onChange={(x) => patch({ x })} />
-                <Num label="Y" value={piece.y} min={-20000} onChange={(y) => patch({ y })} />
-              </div>
-              <div className="slab-angle">
-                <Num
-                  label="Angle on slab"
-                  unit="°"
-                  min={-180}
-                  max={180}
-                  value={slabAngleOf(piece)}
-                  onChange={(a) => patch(rotateOnSlab(piece, a))}
-                />
-                <button
-                  type="button"
-                  title="Reset the angle to 0°"
-                  disabled={!slabAngleOf(piece)}
-                  onClick={() => patch(rotateOnSlab(piece, 0))}
-                >
-                  <RotateCw size={15} /> 0°
-                </button>
-              </div>
-              <p className="hint">
-                Scroll over the piece on the slab to rotate it: 5° per step,
-                Shift for 1°, Ctrl for 15°.
-              </p>
-              <h3>Edge cuts</h3>
-              <EdgeCutsEditor
-                piece={piece}
-                thickness={pr.slabs.find((x) => x.id === piece.slab)?.thickness ?? 20}
-                onPatch={patch}
-              />
-              <h3>Assembly position</h3>
-              <div className="twocol">
-                <Num
-                  label="X"
-                  value={piece.ax}
-                  max={50000}
-                  onChange={(ax) => patch({ ax })}
-                />
-                <Num
-                  label="Y"
-                  value={piece.ay}
-                  max={50000}
-                  onChange={(ay) => patch({ ay })}
-                />
-              </div>
-              <Num
-                label="Z height"
-                value={piece.az ?? 0}
-                max={50000}
-                onChange={(az) => patch({ az })}
-              />
-              <h3>Assembly rotation</h3>
-              <div className="twocol">
-                {(["rx", "ry", "rz"] as const).map((key, i) => (
-                  <Num
-                    key={key}
-                    label={["X tilt", "Y tilt", "Z turn"][i]}
-                    value={piece[key] ?? 0}
-                    min={-360}
-                    max={360}
-                    unit="°"
-                    onChange={(angle) => patch({ [key]: angle })}
-                  />
-                ))}
-              </div>
-              <button
-                className="fullbutton"
-                onClick={() => patch({ rx: 0, ry: 0, rz: 0 })}
-              >
-                Reset assembly rotation
-              </button>
-              <p className="hint">
-                Z is vertical height. Rotation is around the piece origin; X/Y
-                tilt it upright and Z turns it on the assembly plane.
-              </p>
-              <h3>Openings</h3>
-              <OpeningsEditor piece={piece} onPatch={patch} />
-              <div className="pieceactions">
-                <button
-                  title="Duplicate piece (Ctrl+D)"
-                  onClick={() => duplicatePiece(piece)}
-                >
-                  <Copy size={15} /> Duplicate
-                </button>
-                <button
-                  className="danger"
-                  title="Delete piece (Del)"
-                  aria-label="Delete selected piece"
-                  onClick={() => deletePiece(piece)}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="hint">Select a piece on the slab or add a new one.</p>
-          )}
-          <div className="cutsettings">
-              <h3>Global cutting parameters</h3>
-            <div className="twocol">
-              <Num
-                  label="Saw thickness"
-                value={pr.kerf}
-                max={500}
-                onChange={(kerf) => change((p) => ({ ...p, kerf }))}
-              />
-              <Num
-                label="Edge trim"
-                value={pr.margin}
-                max={500}
-                onChange={(margin) => change((p) => ({ ...p, margin }))}
-              />
-            </div>
-            <button className="textbutton" onClick={() => setDialog("defects")}>
-              Manage slab defects <ArrowUpRight size={14} />
-            </button>
-          </div>
-        </aside>
+        <Inspector
+          project={pr}
+          piece={piece}
+          slab={slab}
+          patch={patch}
+          change={change}
+          setDialog={setDialog}
+          moveToSlab={moveToSlab}
+          duplicatePiece={duplicatePiece}
+          deletePiece={deletePiece}
+        />
       </div>
       <Dialog open={!!dialog} onOpenChange={(o) => !o && setDialog("")}>
         <DialogContent
@@ -2105,129 +1683,10 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
               </p>
             </div>
           )}
-          {dialog === "checks" && (
-            <>
-              {warnings.length ? (
-                <ul className="warnings">
-                  {warnings.map((w, i) => (
-                    <li key={w.id + i}>
-                      <TriangleAlert size={17} />
-                      {w.text}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="success">
-                  <Check /> All pieces clear the slab edge, blade gap, and
-                  marked defects.
-                </p>
-              )}
-              <p className="hint">
-                Utilization uses the sum of rectangular piece areas before
-                openings. Overlapping pieces inflate that figure. Checks do not
-                validate cutting sequence, internal corner radii, or stone
-                strength.
-              </p>
-            </>
-          )}
-          {dialog === "help" && (
-            <ol className="help">
-              <li>
-                <b>Upload a real slab.</b> Straighten it and frame its edges,
-                then enter width, height and thickness in millimetres.
-              </li>
-              <li>
-                <b>Create your pieces.</b> Set their size and rectangular
-                openings and their offsets.
-              </li>
-              <li>
-                <b>Match the veins.</b> Move pieces on the slab. Watch the
-                texture change in the assembly preview.
-              </li>
-              <li>
-                <b>Arrange and review.</b> Arrange pieces in the 2D or 3D
-                assembly. Check gaps and edges, then save or export.
-              </li>
-            </ol>
-          )}
-          {dialog === "help" && (
-            <dl className="shortcuts">
-              <dt><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></dt>
-              <dd>Move focused piece 5 mm (Shift: 50 mm)</dd>
-              <dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt>
-              <dd>Undo</dd>
-              <dt><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd></dt>
-              <dd>Redo</dd>
-              <dt><kbd>Ctrl</kbd><kbd>S</kbd></dt>
-              <dd>Save project</dd>
-              <dt><kbd>Ctrl</kbd><kbd>D</kbd></dt>
-              <dd>Duplicate selected piece</dd>
-              <dt><kbd>Scroll</kbd></dt>
-              <dd>Rotate the piece under the pointer on the slab (Shift 1°, Ctrl 15°)</dd>
-              <dt><kbd>Del</kbd></dt>
-              <dd>Delete selected piece</dd>
-            </dl>
-          )}
-          {dialog === "defects" && (
-            <>
-              <button
-                onClick={() =>
-                  change((p) => ({
-                    ...p,
-                    defects: [
-                      ...p.defects,
-                      {
-                        id: crypto.randomUUID(),
-                        slab: slab.id,
-                        x: 100,
-                        y: 100,
-                        w: 100,
-                        h: 100,
-                      },
-                    ],
-                  }))
-                }
-              >
-                <Plus /> Add exclusion
-              </button>
-              <div className="defectlist">
-                {pr.defects
-                  .filter((d) => d.slab === slab.id)
-                  .map((d, i) => (
-                    <div key={d.id}>
-                      <b>Defect {i + 1}</b>
-                      <div className="twocol">
-                        {(["x", "y", "w", "h"] as const).map((k) => (
-                          <Num
-                            key={k}
-                            label={k.toUpperCase()}
-                            value={d[k]}
-                            onChange={(n) =>
-                              change((p) => ({
-                                ...p,
-                                defects: p.defects.map((a) =>
-                                  a.id === d.id ? { ...a, [k]: n } : a,
-                                ),
-                              }))
-                            }
-                          />
-                        ))}
-                      </div>
-                      <button
-                        onClick={() =>
-                          change((p) => ({
-                            ...p,
-                            defects: p.defects.filter((a) => a.id !== d.id),
-                          }))
-                        }
-                      >
-                        <Trash2 size={14} /> Remove
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            </>
-          )}
+          {dialog === "checks" && <ChecksContent warnings={warnings} />}
+          {dialog === "help" && <HelpContent />}
+
+          {dialog === "defects" && <DefectsContent project={pr} slab={slab} change={change} />}
         </DialogContent>
       </Dialog>
       <input

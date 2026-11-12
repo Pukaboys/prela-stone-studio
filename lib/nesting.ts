@@ -10,7 +10,12 @@ export type ArrangeResult = { project: Project; placed: number; unplaced: string
 
 export function autoArrange(pr: Project, opts: { onlyProblems?: boolean; allowTurn?: boolean } = {}): ArrangeResult {
   const allowTurn = opts.allowTurn ?? true;
-  const flagged = new Set(issues(pr).flatMap((i) => [i.id, i.related].filter(Boolean) as string[]));
+  // Only placement problems can be fixed by moving pieces (not opening problems).
+  const flagged = new Set(
+    issues(pr)
+      .filter((i) => i.kind === "placement")
+      .flatMap((i) => [i.id, i.related].filter(Boolean) as string[]),
+  );
   const move = pr.pieces.filter((p) => !opts.onlyProblems || flagged.has(p.id));
   const moving = new Set(move.map((p) => p.id));
   // Start from the pieces that stay put; add the others one by one.
