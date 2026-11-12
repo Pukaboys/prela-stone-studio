@@ -594,3 +594,44 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .licence-actions small{width:100%;color:#c9b8b4}
 @media(max-width:760px){.licence-banner{flex-wrap:wrap;padding:12px 16px}.licence-actions{width:100%}}
 .button-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #3a464e;border-radius:6px;padding:9px 12px;text-decoration:none;color:#e1e7e9;background:#263037}.button-link.primary{background:#bde96e;color:#203018;border-color:#bde96e;font-weight:700}
+
+/* Project name, save status and help live in the header (no separate project row). */
+.topproject{flex:1;min-width:0;display:flex;align-items:center;gap:12px;margin:0 24px}
+.topproject input{font-weight:600;font-size:16px;border:1px solid transparent;background:transparent;padding:6px 9px;width:auto;min-width:120px;max-width:340px;flex:0 1 340px;border-radius:6px;text-overflow:ellipsis}
+.topproject input:hover,.topproject input:focus{border-color:#3a464e;background:#192126}
+.topproject .save-status{border-left:1px solid #465056;padding-left:12px}
+.topproject .quiet{margin-left:auto;white-space:nowrap}
+@media(max-width:1250px){.topproject .quiet,.brand small{display:none}.topproject{margin:0 14px}}
+@media(max-width:950px){.topbar{height:auto;min-height:62px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px;gap:6px}.topproject{order:3;flex:1 1 100%;margin:0}.topproject input{flex:1 1 auto;max-width:none}}
+
+/* Desktop and tablet: the page itself never scrolls. The side panels scroll on
+   their own; the middle workspace stays put and its boards fill the window. */
+@media(min-width:951px){
+  .studio{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  .studio>.topbar,.studio>.licence-banner{flex:none}
+  .studio>.workgrid{flex:1;min-height:0}
+  .workgrid>.leftpanel,.workgrid>.inspector{min-height:0;overflow-y:auto;overscroll-behavior:contain}
+  .workgrid>.workspace{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  .workspace>.toolbar,.workspace>.statsbar,.workspace>.workspace-note{flex:none}
+  .workspace>.canvases,.workspace>.pieces-page{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+  .workspace>.statsbar{margin-bottom:10px}
+  .workspace>.workspace-note{margin:0 23px 10px}
+  .slablist{max-height:none;overflow:visible}
+  .canvases.split{min-height:0}
+  /* Each panel is a column: header, then the board (fills what is left), then caption / controls. */
+  .workspace>.canvases{display:grid;grid-template-rows:minmax(0,1fr)}
+  .workspace>.canvases>.canvaspanel{display:flex;flex-direction:column;min-height:0}
+  .canvaspanel>.canvashead,.canvaspanel>.canvascaption,.canvaspanel>.assembly-pad{flex:none}
+  .canvaspanel>.board-scroll{flex:1 1 0;min-height:160px;height:auto!important;container-type:size}
+  .canvaspanel>.board-scroll .slab-svg,.canvaspanel>.board-scroll .assembly-svg{height:100cqh}
+  .canvaspanel>.assembly-3d{flex:1 1 0;min-height:200px;height:auto}
+  /* Very short windows: only the panel itself scrolls, never the page. */
+  .workspace>.canvases>.canvaspanel{overflow-y:auto}
+}
+@media(min-width:951px) and (max-height:820px){
+  .workspace>.workspace-note{display:none}
+  .workspace>.statsbar{padding:10px 16px}
+  .statsbar b{font-size:17px}
+  .workspace>.canvases{padding-top:12px;padding-bottom:12px}
+  .assembly-pad{padding:8px 12px 10px;gap:8px}
+}

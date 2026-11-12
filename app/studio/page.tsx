@@ -852,6 +852,20 @@ function StudioApp({ user }: { user: StudioUser }) {
             <small>Slab planning & vein matching</small>
           </div>
         </div>
+        <div className="topproject">
+          <input
+            aria-label="Project name"
+            title="Project name"
+            value={pr.name}
+            onChange={(e) => change((p) => ({ ...p, name: e.target.value.slice(0, 150) }))}
+          />
+          <span className={"save-status " + saved} role="status">
+            {saveLabels[saved]}
+          </span>
+          <button className="quiet" onClick={() => setDialog("help")}>
+            How it works <ArrowUpRight size={16} />
+          </button>
+        </div>
         <div className="topactions">
           <button
             className="quiet signout"
@@ -897,24 +911,6 @@ function StudioApp({ user }: { user: StudioUser }) {
         </div>
       </header>
       {user.mode === "desktop" && <LicenceBanner user={user} />}
-      <div className="projectbar">
-        <div>
-          <span className="eyebrow">WORKSPACE / </span>
-          <input
-            aria-label="Project name"
-            value={pr.name}
-            onChange={(e) =>
-              change((p) => ({ ...p, name: e.target.value.slice(0, 150) }))
-            }
-          />
-          <span className={"save-status " + saved} role="status">
-            {saveLabels[saved]}
-          </span>
-        </div>
-        <button className="quiet" onClick={() => setDialog("help")}>
-          How it works <ArrowUpRight size={16} />
-        </button>
-      </div>
       <div className="workgrid">
         <aside className="leftpanel">
           <div className="panelhead">
