@@ -1,6 +1,19 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+
+// Build stamp shown in the app (sidebar and help), so builds can be told
+// apart even when the version number stays the same.
+function buildInfo() {
+  let commit = "dev";
+  try {
+    commit = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    // not a git checkout
+  }
+  return { commit, date: new Date().toISOString().slice(0, 16).replace("T", " ") };
+}
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
@@ -65,6 +78,7 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    define: { __BUILD_INFO__: JSON.stringify(buildInfo()) },
     server: {
       ...(managedLinux ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] } : {}),
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),

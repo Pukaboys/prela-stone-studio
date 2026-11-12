@@ -150,6 +150,9 @@ function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: Photo
   const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
   return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%`, transform: slab.mirror ? "scaleX(-1)" : undefined }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
 }
+/** Build stamp (date and commit) injected at build time; "dev" in tests. */
+const BUILD = typeof __BUILD_INFO__ !== "undefined" ? __BUILD_INFO__ : { commit: "dev", date: "" };
+
 type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "quote" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
 const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
   slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
@@ -1072,7 +1075,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
             <Plus size={16} /> Add piece
           </button>
           <div className="sidebarfoot">
-            PRELA MERMER <span>Planning studio · v1</span>
+            PRELA MERMER <span>Planning studio · build {BUILD.date} · {BUILD.commit}</span>
           </div>
         </aside>
         <section className="workspace">

@@ -112,6 +112,48 @@ function createWindow() {
   mainWindow.on("closed", () => (mainWindow = null));
 }
 
+// ---------------------------------------------------------------- updates
+const RELEASES = "https://api.github.com/repos/Pukaboys/prela-stone-studio/releases/latest";
+
+/** Compare "1.2.3" style versions: >0 when a is newer than b. */
+function compareVersions(a, b) {
+  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+}
+
+/**
+ * Ask GitHub for the newest release and offer it. `manual` shows a message
+ * even when the app is up to date or offline.
+ */
+async function checkForUpdates(manual = false) {
+  try {
+    const res = await fetch(RELEASES, { headers: { Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(8000) });
+    if (res.status === 404) {
+      if (manual) dialog.showMessageBox({ type: "info", message: "No releases published yet.", detail: `You have version ${app.getVersion()}.` });
+      return;
+    }
+    if (!res.ok) throw new Error(`GitHub replied ${res.status}`);
+    const release = await res.json();
+    const latest = String(release.tag_name || "").replace(/^v/, "");
+    if (latest && compareVersions(latest, app.getVersion()) > 0) {
+      const { response } = await dialog.showMessageBox({
+        type: "info",
+        buttons: ["Download", "Later"],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Prela Stone Studio ${latest} is available`,
+        detail: `You have version ${app.getVersion()}. The download page opens in your browser; install it over this version — your projects stay.`,
+      });
+      if (response === 0) shell.openExternal(release.html_url);
+    } else if (manual) {
+      dialog.showMessageBox({ type: "info", message: "You have the latest version.", detail: `Version ${app.getVersion()}.` });
+    }
+  } catch (error) {
+    if (manual) dialog.showMessageBox({ type: "warning", message: "Could not check for updates.", detail: String(error?.message || error) });
+  }
+}
+
 function buildMenu() {
   const openData = {
     label: "Open Data Folder",
@@ -135,6 +177,15 @@ function buildMenu() {
       ],
     },
     { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        { label: "Check for Updates…", click: () => checkForUpdates(true) },
+        { label: "Releases on GitHub", click: () => shell.openExternal("https://github.com/Pukaboys/prela-stone-studio/releases") },
+        { type: "separator" },
+        { label: `Version ${app.getVersion()}`, enabled: false },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -184,6 +235,8 @@ app.whenReady().then(async () => {
     await startServer();
     if (process.env.PRELA_SMOKE_TEST === "1") return smokeTest();
     createWindow();
+    // Quietly look for a newer release a few seconds after start.
+    setTimeout(() => checkForUpdates(false), 5000);
   } catch (error) {
     dialog.showErrorBox(
       "Prela Stone Studio could not start",
