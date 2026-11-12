@@ -130,3 +130,42 @@ export function validEdges(e: unknown): boolean {
     ([k, v]) => (SIDES as string[]).includes(k) && (v === "straight" || v === "below" || v === "above"),
   );
 }
+
+// ---------------------------------------------------------------- finishes
+/** Edge finish (profile) of a side. Mitred sides are joints and take no finish. */
+export type EdgeFinish = "raw" | "polished" | "eased" | "bevel" | "half-bullnose" | "bullnose" | "ogee";
+export type EdgeFinishes = Partial<Record<Side, EdgeFinish>>;
+export const FINISHES: EdgeFinish[] = ["raw", "polished", "eased", "bevel", "half-bullnose", "bullnose", "ogee"];
+export const FINISH_LABEL: Record<EdgeFinish, string> = {
+  raw: "Raw (hidden)",
+  polished: "Polished",
+  eased: "Eased",
+  bevel: "Bevel",
+  "half-bullnose": "Half bullnose",
+  bullnose: "Bullnose",
+  ogee: "Ogee",
+};
+
+/** Finish per side; mitred sides report "raw" (they are joints). */
+export function edgeFinishesOf(p: Pick<Piece, "finishes" | "edges" | "cutAngle">): Record<Side, EdgeFinish> {
+  const cuts = edgeCutsOf(p);
+  return Object.fromEntries(SIDES.map((s) => [s, cuts[s] !== "straight" ? "raw" : (p.finishes?.[s] ?? "raw")])) as Record<Side, EdgeFinish>;
+}
+
+export function validFinishes(f: unknown): boolean {
+  if (f === undefined) return true;
+  if (!f || typeof f !== "object") return false;
+  return Object.entries(f as Record<string, unknown>).every(
+    ([k, v]) => (SIDES as string[]).includes(k) && (FINISHES as unknown[]).includes(v),
+  );
+}
+
+/** Length (mm) of the outline on each side — for edge pricing and cut lists. */
+export function sideLengths(outline: Pt[]): Record<Side, number> {
+  const out: Record<Side, number> = { back: 0, right: 0, front: 0, left: 0 };
+  segmentSides(outline).forEach((s, i) => {
+    const p = outline[i], q = outline[(i + 1) % outline.length];
+    out[s.side] += Math.hypot(q.x - p.x, q.y - p.y);
+  });
+  return out;
+}

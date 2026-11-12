@@ -2,7 +2,8 @@
 import { useState, useRef, useEffect } from "react";
 import Assembly3D from "@/components/assembly-3d";
 import Num from "@/components/num-field";
-import HolePosition, { HoleShapePicker } from "@/components/hole-position";
+import OpeningsEditor from "@/components/openings-editor";
+import SignIn from "@/components/sign-in";
 import ShapeThumb from "@/components/shape-thumb";
 import EdgeCutsEditor from "@/components/edge-cuts";
 import { edgeCutsOf, mitreStrips } from "@/lib/edges";
@@ -34,6 +35,7 @@ import {
   SlidersHorizontal,
   ZoomIn,
   ZoomOut,
+  LogOut,
   Crop,
   Box,
 } from "lucide-react";
@@ -59,8 +61,7 @@ import {
   rotateOnSlab,
   slabAngleOf,
   pieceArea,
-  pieceHole,
-  nudgeHole,
+  pieceHoles,
   validProject,
   slabCrop,
   slabImageRect,
@@ -142,13 +143,14 @@ function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: Photo
   const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
   return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%` }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
 }
-type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
+type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
 const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
   slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
   photo: { title: "Adjust slab photo", description: "Straighten, correct perspective and frame the slab edges." },
   shape: { title: "Piece shape", description: "Rectangle with shaped corners, circle, arch, curved band or free form." },
   scan: { title: "Scan shapes", description: "Trace pieces from a photo of templates or a drawing." },
   edges: { title: "Edge cuts", description: "Straight or 45° mitre on each side, below or above." },
+  openings: { title: "Openings", description: "Sinks, tap holes, hobs and other cut-outs, positioned from the edges." },
   projects: { title: "Your projects", description: "Saved projects are available when you return." },
   export: { title: "Export project", description: "Keep a project file or share the planned layout." },
   checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
@@ -174,7 +176,25 @@ const ZOOM_MIN = 0.5,
   ZOOM_MAX = 3,
   ZOOM_STEP = 0.25;
 
+/**
+ * Entry: when the website has a team password (STUDIO_PASSWORD), show the
+ * sign-in screen until this browser has a session; otherwise open directly.
+ */
 export default function Studio() {
+  const [auth, setAuth] = useState<{ required: boolean; signedIn: boolean } | null>(null);
+  useEffect(() => {
+    fetch("/api/session", { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ required: boolean; signedIn: boolean }>)
+      .then(setAuth)
+      .catch(() => setAuth({ required: false, signedIn: true }));
+  }, []);
+  if (!auth) return <main className="studio" aria-busy="true" />;
+  if (auth.required && !auth.signedIn)
+    return <SignIn onSignedIn={() => setAuth({ required: true, signedIn: true })} />;
+  return <StudioApp canSignOut={auth.required} />;
+}
+
+function StudioApp({ canSignOut }: { canSignOut: boolean }) {
   const [pr, setPr] = useState<Project>(demo),
     [sid, setSid] = useState("s1"),
     [selected, setSelected] = useState("p1"),
@@ -847,11 +867,13 @@ export default function Studio() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [saved]);
   useEffect(() => {
-    const ctx = (document as any).modelContext;
+    // Optional WebMCP hook (browsers/agents that expose document.modelContext).
+    type ModelContext = { registerTool?: (tool: unknown, options: { signal: AbortSignal }) => unknown };
+    const ctx = (document as Document & { modelContext?: ModelContext }).modelContext;
     if (!ctx?.registerTool) return;
     const lifecycle = new AbortController();
     Promise.resolve(
-      ctx.registerTool(
+      ctx.registerTool!(
         {
           name: "get_slab_layout",
           description:
@@ -862,7 +884,7 @@ export default function Studio() {
             additionalProperties: false,
           },
           annotations: { readOnlyHint: true },
-          execute: (input: any) => {
+          execute: (input: unknown) => {
             if (
               !input ||
               typeof input !== "object" ||
@@ -893,6 +915,19 @@ export default function Studio() {
           </div>
         </div>
         <div className="topactions">
+          {canSignOut && (
+            <button
+              className="quiet signout"
+              title="Sign out of the studio on this browser"
+              onClick={async () => {
+                if (saved === "dirty" && !confirm("Sign out and discard unsaved changes?")) return;
+                await fetch("/api/session", { method: "DELETE" });
+                window.location.reload();
+              }}
+            >
+              <LogOut size={16} /> <span>Sign out</span>
+            </button>
+          )}
           <button onClick={openProjects}>
             <FolderOpen /> <span>Projects</span>
           </button>
@@ -1103,6 +1138,11 @@ export default function Studio() {
                 setDialog("shape");
               }}
               onScan={() => setDialog("scan")}
+              onEditOpenings={(p) => {
+                setSelected(p.id);
+                setSid(p.slab);
+                setDialog("openings");
+              }}
               onEditEdges={(p) => {
                 setSelected(p.id);
                 setSid(p.slab);
@@ -1195,8 +1235,7 @@ export default function Studio() {
                         f = { w: m.w, h: m.h },
                         angle = slabAngleOf(p),
                         shapePath = pathD(pieceOutline(p).map(m.local)),
-                        holePts = pieceHole(p),
-                        holePath = holePts ? pathD(holePts.map(m.local)) : "",
+                        holePath = pieceHoles(p).map((h) => pathD(h.map(m.local))).join(""),
                         plain = (!p.shape || p.shape.kind === "rect") && angle % 90 === 0,
                         labelW = Math.max(0, Math.min(f.w - 36, 510)),
                         labelX = plain ? 18 : (f.w - labelW) / 2,
@@ -1404,9 +1443,8 @@ export default function Studio() {
                       />
                       {pr.pieces.map((p, i) => {
                         const s = pr.slabs.find((s) => s.id === p.slab)!,
-                          holePts = pieceHole(p),
                           outlinePath = pathD(pieceOutline(p)),
-                          holePath = holePts ? pathD(holePts) : "",
+                          holePath = pieceHoles(p).map(pathD).join(""),
                           img = slabImageRect(s);
                         return (
                           <g
@@ -1687,49 +1725,8 @@ export default function Studio() {
                 Z is vertical height. Rotation is around the piece origin; X/Y
                 tilt it upright and Z turns it on the assembly plane.
               </p>
-              <h3>Opening</h3>
-              <div className="twocol">
-                <Num
-                  label="Width"
-                  value={piece.holeW}
-                  onChange={(holeW) => patch({ holeW })}
-                />
-                <Num
-                  label="Height"
-                  value={piece.holeH}
-                  onChange={(holeH) => patch({ holeH })}
-                />
-              </div>
-              <HoleShapePicker piece={piece} onPatch={patch} />
-              <HolePosition piece={piece} onPatch={patch} />
-              <div className="opening-actions" role="group" aria-label="Nudge opening">
-                {(
-                  [
-                    ["Left", -1, 0, "←"],
-                    ["Right", 1, 0, "→"],
-                    ["Back", 0, -1, "↑"],
-                    ["Front", 0, 1, "↓"],
-                  ] as const
-                ).map(([name, dx, dy, arrow]) => (
-                  <button
-                    key={name}
-                    title={`Move opening 5 mm towards the ${name.toLowerCase()} (Shift: 50 mm)`}
-                    aria-label={`Move opening towards the ${name.toLowerCase()}`}
-                    disabled={!(piece.holeW > 0 && piece.holeH > 0)}
-                    onClick={(e) => {
-                      const step = e.shiftKey ? 50 : 5;
-                      patch(nudgeHole(piece, dx * step, dy * step));
-                    }}
-                  >
-                    {arrow} {name}
-                  </button>
-                ))}
-              </div>
-              <p className="hint">
-                Distances run from the chosen piece edge to the edge of the
-                opening. Back is the top edge in the drawings (wall side), front
-                the bottom edge. Set width and height to 0 for a solid piece.
-              </p>
+              <h3>Openings</h3>
+              <OpeningsEditor piece={piece} onPatch={patch} />
               <div className="pieceactions">
                 <button
                   title="Duplicate piece (Ctrl+D)"
@@ -1902,6 +1899,21 @@ export default function Studio() {
                 thickness={pr.slabs.find((x) => x.id === piece.slab)?.thickness ?? 20}
                 onPatch={patch}
               />
+              <div className="dialog-actions">
+                <span />
+                <button className="primary" onClick={() => setDialog("")}>
+                  Done
+                </button>
+              </div>
+            </>
+          )}
+          {dialog === "openings" && piece && (
+            <>
+              <div className="edges-dialog-head">
+                <ShapeThumb piece={piece} size={44} />
+                <b>{piece.name}</b>
+              </div>
+              <OpeningsEditor piece={piece} onPatch={patch} />
               <div className="dialog-actions">
                 <span />
                 <button className="primary" onClick={() => setDialog("")}>

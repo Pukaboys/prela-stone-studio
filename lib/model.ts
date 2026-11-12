@@ -1,4 +1,4 @@
-import { validEdges, type EdgeCuts } from "@/lib/edges";
+import { validEdges, validFinishes, type EdgeCuts, type EdgeFinishes } from "@/lib/edges";
 import {
   area,
   containsPolygon,
@@ -46,9 +46,25 @@ export type Slab = {
   crop?: PhotoCrop;
   calibration?: PhotoQuad;
   adjustments?: PhotoAdjustments;
+  /** Book-matched slab: show the photo mirrored left–right. */
+  mirror?: boolean;
   edit?: PhotoEdit;
 };
 export type CutAngle = 0 | 45;
+/** One opening, positioned by distances from the piece edges to its edges. */
+export type Opening = {
+  id: string;
+  label?: string;
+  w: number;
+  h: number;
+  kind?: HoleKind;
+  /** Corner radius for rounded openings. */
+  r?: number;
+  edgeX: HoleEdgeX;
+  dx: number;
+  edgeY: HoleEdgeY;
+  dy: number;
+};
 export type HoleEdgeX = "left" | "right";
 /** Back is the top edge of the piece in the drawings (wall side); front is the bottom edge. */
 export type HoleEdgeY = "front" | "back";
@@ -89,6 +105,10 @@ export type Piece = {
   shape?: PieceShape;
   /** Per-side edge cut: straight, or 45° mitre below / above. */
   edges?: EdgeCuts;
+  /** Per-side edge finish (polished, bullnose…), used for drawings and quotes. */
+  finishes?: EdgeFinishes;
+  /** Openings (sinks, tap holes, hobs…). Replaces the legacy single opening. */
+  openings?: Opening[];
   color: string;
 };
 export type Defect = {
@@ -428,16 +448,54 @@ export function nudgeHole(p: Piece, dx: number, dy: number): Partial<Piece> {
   });
 }
 
-/** Opening outline in piece-local mm, or null for a solid piece. */
-export function pieceHole(p: Piece): Pt[] | null {
-  if (!(p.holeW > 0 && p.holeH > 0)) return null;
-  return holeOutline(opening(p), p.holeKind, p.holeR ?? 0);
+/**
+ * The piece's openings. Pieces saved with the legacy single opening
+ * (holeW/holeH and its position fields) read as a one-item list.
+ */
+export function openingsOf(p: Piece): Opening[] {
+  if (p.openings) return p.openings;
+  if (!(p.holeW > 0 && p.holeH > 0)) return [];
+  const d = holeDistances(p);
+  return [{ id: "opening-1", w: p.holeW, h: p.holeH, kind: p.holeKind, r: p.holeR, edgeX: d.edgeX, dx: d.dx, edgeY: d.edgeY, dy: d.dy }];
 }
 
-/** Finished stone area of a piece in mm² (shape minus opening). */
+/** Box of an opening in piece-local mm. */
+export function openingBox(p: Pick<Piece, "w" | "h">, o: Opening) {
+  return {
+    x: o.edgeX === "right" ? p.w - o.dx - o.w : o.dx,
+    y: o.edgeY === "back" ? o.dy : p.h - o.dy - o.h,
+    w: o.w,
+    h: o.h,
+  };
+}
+
+/** Patch that stores a new opening list and clears the legacy fields. */
+export function setOpenings(list: Opening[]): Partial<Piece> {
+  return {
+    openings: list,
+    holeW: 0,
+    holeH: 0,
+    holeX: undefined,
+    holeY: undefined,
+    holeDX: undefined,
+    holeDY: undefined,
+    holeEdgeX: undefined,
+    holeEdgeY: undefined,
+    holeKind: undefined,
+    holeR: undefined,
+  };
+}
+
+/** Outlines of all openings in piece-local mm. */
+export function pieceHoles(p: Piece): Pt[][] {
+  return openingsOf(p)
+    .filter((o) => o.w > 0 && o.h > 0)
+    .map((o) => holeOutline(openingBox(p, o), o.kind, o.r ?? 0));
+}
+
+/** Finished stone area of a piece in mm² (shape minus openings). */
 export function pieceArea(p: Piece) {
-  const hole = pieceHole(p);
-  return Math.max(0, area(pieceOutline(p)) - (hole ? area(hole) : 0));
+  return Math.max(0, area(pieceOutline(p)) - pieceHoles(p).reduce((a, h) => a + area(h), 0));
 }
 
 /** Piece outline in slab millimetres (position and rotation applied). */
@@ -464,11 +522,19 @@ export function issues(pr: Project): Issue[] {
       p.y + b.h > s.h - pr.margin
     )
       out.push({ id: p.id, text: p.name + ": outside usable slab edge" });
-    if (p.holeW > 0 !== p.holeH > 0 || p.holeW >= p.w || p.holeH >= p.h)
+    if (p.holeW > 0 !== p.holeH > 0)
       out.push({ id: p.id, text: p.name + ": invalid opening dimensions" });
-    const hole = pieceHole(p);
-    if (hole && !containsPolygon(pieceOutline(p), hole))
-      out.push({ id: p.id, text: p.name + ": opening extends outside piece" });
+    const shape = pieceOutline(p);
+    const holes = openingsOf(p).map((o) => ({ o, pts: holeOutline(openingBox(p, o), o.kind, o.r ?? 0) }));
+    holes.forEach(({ o, pts }, n) => {
+      const name = `${p.name}: ${o.label || `opening ${n + 1}`}`;
+      if (!(o.w > 0 && o.h > 0) || o.w >= p.w || o.h >= p.h) out.push({ id: p.id, text: name + " has invalid dimensions" });
+      else if (!containsPolygon(shape, pts)) out.push({ id: p.id, text: name + " extends outside the piece" });
+      // Openings need the saw gap between them, too.
+      for (let k = n + 1; k < holes.length; k++)
+        if (tooClose(pts, holes[k].pts, pr.kerf))
+          out.push({ id: p.id, text: `${name} is too close to ${holes[k].o.label || `opening ${k + 1}`}` });
+    });
     const mine = outlines.get(p.id)!;
     for (const q of pr.pieces) {
       if (q.id <= p.id || q.slab !== p.slab) continue;
@@ -484,90 +550,108 @@ export function issues(pr: Project): Issue[] {
   }
   return out;
 }
-export function validProject(p: any): p is Project {
+// ---------------------------------------------------------------- validation
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
+const num = (n: unknown, min: number, max: number) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
+const optNum = (n: unknown, min: number, max: number) => n === undefined || num(n, min, max);
+const oneOf = (v: unknown, options: readonly unknown[]) => options.includes(v);
+const PHOTO = /^\/(demo-slab\.png|api\/images\?id=[a-zA-Z0-9-]+)$/;
+const isPhoto = (v: unknown) => typeof v === "string" && PHOTO.test(v);
+const isCrop = (c: unknown, min: number, max: number) =>
+  isObj(c) && [c.x, c.y, c.w, c.h].every((n) => num(n, min, max)) && (c.w as number) > 0 && (c.h as number) > 0;
+const isPt = (p: unknown, min: number, max: number) => isObj(p) && num(p.x, min, max) && num(p.y, min, max);
+
+function validSlab(s: unknown) {
+  if (!isObj(s)) return false;
+  const edit = s.edit, adj = s.adjustments, cal = s.calibration;
   return (
-    !!p &&
-    typeof p.name === "string" &&
-    p.name.length <= 150 &&
-    Array.isArray(p.slabs) &&
-    p.slabs.length <= 30 &&
-    p.slabs.length > 0 &&
-    Array.isArray(p.pieces) &&
-    p.pieces.length <= 100 &&
-    Array.isArray(p.defects) &&
-    p.defects.length <= 100 &&
-    [p.kerf, p.margin].every((n) => Number.isFinite(n) && n >= 0 && n <= 500) &&
-    p.slabs.every(
-      (s: any) =>
-        typeof s.id === "string" &&
-        typeof s.name === "string" &&
-        typeof s.image === "string" &&
-        /^\/(demo-slab\.png|api\/images\?id=[a-zA-Z0-9-]+)$/.test(s.image) &&
-        [s.w, s.h, s.thickness].every(
-          (n) => Number.isFinite(n) && n > 0 && n <= 20000,
-        ) &&
-        (s.photoWidth === undefined || Number.isFinite(s.photoWidth)) &&
-        (s.photoHeight === undefined || Number.isFinite(s.photoHeight)) &&
-        (s.crop === undefined || [s.crop.x, s.crop.y, s.crop.w, s.crop.h].every((n: number) => Number.isFinite(n) && n >= 0 && n <= 1) && s.crop.w > 0 && s.crop.h > 0) &&
-        (s.calibration === undefined || [s.calibration.tl, s.calibration.tr, s.calibration.br, s.calibration.bl].every((p: { x: number; y: number }) => p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1)) &&
-        (s.edit === undefined ||
-          (typeof s.edit === "object" &&
-            typeof s.edit.source === "string" &&
-            /^\/(demo-slab\.png|api\/images\?id=[a-zA-Z0-9-]+)$/.test(s.edit.source) &&
-            [s.edit.straighten, s.edit.vertical, s.edit.horizontal].every(
-              (n: number) => Number.isFinite(n) && Math.abs(n) <= EDIT_LIMIT,
-            ) &&
-            !!s.edit.crop &&
-            [s.edit.crop.x, s.edit.crop.y, s.edit.crop.w, s.edit.crop.h].every(
-              (n: number) => Number.isFinite(n) && Math.abs(n) <= 10,
-            ) &&
-            s.edit.crop.w > 0 &&
-            s.edit.crop.h > 0)) &&
-        (s.adjustments === undefined || [s.adjustments.straighten, s.adjustments.perspectiveV, s.adjustments.perspectiveH].every((n: number) => Number.isFinite(n) && Math.abs(n) <= 45)),
-    ) &&
-    p.pieces.every(
-      (q: any) =>
-        typeof q.id === "string" &&
-        typeof q.name === "string" &&
-        p.slabs.some((s: any) => s.id === q.slab) &&
-        [q.w, q.h].every((n) => Number.isFinite(n) && n > 0 && n <= 20000) &&
-        [q.ax, q.ay, q.holeW, q.holeH].every(
-          (n) => Number.isFinite(n) && n >= 0 && n <= 50000,
-        ) &&
-        // A rotated piece may overhang the slab edge (flagged by the checks).
-        [q.x, q.y].every((n) => Number.isFinite(n) && n >= -20000 && n <= 50000) &&
-        [q.holeX, q.holeY].every(
-          (n) =>
-            n === undefined || (Number.isFinite(n) && Math.abs(n) <= 20000),
-        ) &&
-        validShape(q.shape) &&
-        validEdges(q.edges) &&
-        (q.holeKind === undefined || ["rect", "rounded", "ellipse"].includes(q.holeKind)) &&
-        (q.holeR === undefined || (Number.isFinite(q.holeR) && q.holeR >= 0 && q.holeR <= 5000)) &&
-        (q.holeEdgeX === undefined || q.holeEdgeX === "left" || q.holeEdgeX === "right") &&
-        (q.holeEdgeY === undefined || q.holeEdgeY === "front" || q.holeEdgeY === "back") &&
-        [q.holeDX, q.holeDY].every(
-          (n) => n === undefined || (Number.isFinite(n) && n >= -20000 && n <= 20000),
-        ) &&
-        (q.az === undefined ||
-          (Number.isFinite(q.az) && q.az >= 0 && q.az <= 50000)) &&
-        [q.rx, q.ry, q.rz].every(
-          (n) => n === undefined || (Number.isFinite(n) && Math.abs(n) <= 360),
-        ) &&
-        typeof q.rot === "boolean" &&
-        (q.slabAngle === undefined || (Number.isFinite(q.slabAngle) && Math.abs(q.slabAngle) <= 360)) &&
-        (q.cutAngle === undefined || [0, 45].includes(q.cutAngle)) &&
-        /^#[0-9a-f]{6}$/i.test(q.color),
-    ) &&
-    p.defects.every(
-      (d: any) =>
-        typeof d.id === "string" &&
-        p.slabs.some((s: any) => s.id === d.slab) &&
-        [d.x, d.y, d.w, d.h].every(
-          (n) => Number.isFinite(n) && n >= 0 && n <= 20000,
-        ) &&
-        (d.points === undefined || (Array.isArray(d.points) && d.points.length >= 2 && d.points.every((point: any) => Number.isFinite(point.x) && Number.isFinite(point.y)))) &&
-        (d.brush === undefined || (Number.isFinite(d.brush) && d.brush > 0 && d.brush <= 1000)),
-    )
+    typeof s.id === "string" &&
+    typeof s.name === "string" &&
+    isPhoto(s.image) &&
+    [s.w, s.h, s.thickness].every((n) => num(n, 1e-9, 20000)) &&
+    optNum(s.photoWidth, 0, 1e6) &&
+    optNum(s.photoHeight, 0, 1e6) &&
+    (s.crop === undefined || isCrop(s.crop, 0, 1)) &&
+    (cal === undefined || (isObj(cal) && [cal.tl, cal.tr, cal.br, cal.bl].every((q) => isPt(q, 0, 1)))) &&
+    (edit === undefined ||
+      (isObj(edit) &&
+        isPhoto(edit.source) &&
+        [edit.straighten, edit.vertical, edit.horizontal].every((n) => num(n, -EDIT_LIMIT, EDIT_LIMIT)) &&
+        isCrop(edit.crop, -10, 10))) &&
+    (adj === undefined || (isObj(adj) && [adj.straighten, adj.perspectiveV, adj.perspectiveH].every((n) => num(n, -45, 45)))) &&
+    (s.mirror === undefined || typeof s.mirror === "boolean")
   );
+}
+
+function validPiece(q: unknown, slabIds: Set<unknown>) {
+  if (!isObj(q)) return false;
+  return (
+    typeof q.id === "string" &&
+    typeof q.name === "string" &&
+    slabIds.has(q.slab) &&
+    [q.w, q.h].every((n) => num(n, 1e-9, 20000)) &&
+    [q.ax, q.ay, q.holeW, q.holeH].every((n) => num(n, 0, 50000)) &&
+    // A rotated piece may overhang the slab edge (flagged by the checks).
+    [q.x, q.y].every((n) => num(n, -20000, 50000)) &&
+    [q.holeX, q.holeY].every((n) => optNum(n, -20000, 20000)) &&
+    validShape(q.shape) &&
+    validEdges(q.edges) &&
+    (q.holeKind === undefined || oneOf(q.holeKind, ["rect", "rounded", "ellipse"])) &&
+    optNum(q.holeR, 0, 5000) &&
+    (q.holeEdgeX === undefined || oneOf(q.holeEdgeX, ["left", "right"])) &&
+    (q.holeEdgeY === undefined || oneOf(q.holeEdgeY, ["front", "back"])) &&
+    [q.holeDX, q.holeDY].every((n) => optNum(n, -20000, 20000)) &&
+    (q.openings === undefined || (Array.isArray(q.openings) && q.openings.length <= 20 && q.openings.every(validOpening))) &&
+    (q.finishes === undefined || validFinishes(q.finishes)) &&
+    optNum(q.az, 0, 50000) &&
+    [q.rx, q.ry, q.rz].every((n) => optNum(n, -360, 360)) &&
+    typeof q.rot === "boolean" &&
+    optNum(q.slabAngle, -360, 360) &&
+    (q.cutAngle === undefined || oneOf(q.cutAngle, [0, 45])) &&
+    typeof q.color === "string" &&
+    /^#[0-9a-f]{6}$/i.test(q.color)
+  );
+}
+
+function validDefect(d: unknown, slabIds: Set<unknown>) {
+  if (!isObj(d)) return false;
+  return (
+    typeof d.id === "string" &&
+    slabIds.has(d.slab) &&
+    [d.x, d.y, d.w, d.h].every((n) => num(n, 0, 20000)) &&
+    (d.points === undefined ||
+      (Array.isArray(d.points) && d.points.length >= 2 && d.points.every((pt) => isPt(pt, -1e6, 1e6)))) &&
+    optNum(d.brush, 1e-9, 1000)
+  );
+}
+
+function validOpening(o: unknown) {
+  return (
+    isObj(o) &&
+    typeof o.id === "string" &&
+    (o.label === undefined || (typeof o.label === "string" && o.label.length <= 40)) &&
+    num(o.w, 0, 20000) &&
+    num(o.h, 0, 20000) &&
+    (o.kind === undefined || oneOf(o.kind, ["rect", "rounded", "ellipse"])) &&
+    optNum(o.r, 0, 5000) &&
+    oneOf(o.edgeX, ["left", "right"]) &&
+    oneOf(o.edgeY, ["front", "back"]) &&
+    num(o.dx, -20000, 20000) &&
+    num(o.dy, -20000, 20000)
+  );
+}
+
+/** Checks untrusted project JSON (saved files, backups, API input). */
+export function validProject(input: unknown): input is Project {
+  if (!isObj(input)) return false;
+  const p = input;
+  if (typeof p.name !== "string" || p.name.length > 150) return false;
+  if (!Array.isArray(p.slabs) || !p.slabs.length || p.slabs.length > 30) return false;
+  if (!Array.isArray(p.pieces) || p.pieces.length > 100) return false;
+  if (!Array.isArray(p.defects) || p.defects.length > 100) return false;
+  if (![p.kerf, p.margin].every((n) => num(n, 0, 500))) return false;
+  if (!p.slabs.every(validSlab)) return false;
+  const slabIds = new Set(p.slabs.map((s: Obj) => s.id));
+  return p.pieces.every((q) => validPiece(q, slabIds)) && p.defects.every((d) => validDefect(d, slabIds));
 }

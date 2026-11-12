@@ -1,3 +1,4 @@
+import { requireSession } from "@/lib/auth";
 import { getStore } from "@/lib/storage";
 
 const ID = /^[a-zA-Z0-9-]+$/;
@@ -6,6 +7,8 @@ const MAX_BYTES = 8_000_000;
 
 export async function GET(req: Request) {
   try {
+    const denied = await requireSession(req);
+    if (denied) return denied;
     const id = new URL(req.url).searchParams.get("id");
     if (!id || !ID.test(id)) return new Response("Invalid image", { status: 400 });
     const obj = await (await getStore()).get("images/" + id);
@@ -25,6 +28,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const denied = await requireSession(req);
+    if (denied) return denied;
     const mime = req.headers.get("content-type") || "";
     if (!TYPES.includes(mime))
       return new Response("Use a JPG, PNG or WebP image.", { status: 400 });

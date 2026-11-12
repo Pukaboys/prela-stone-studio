@@ -12,6 +12,8 @@
     "start": "node dist/standalone/server.js",
     "preview:worker": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p .",
     "db:generate": "drizzle-kit generate",
     "desktop": "pnpm run build && node desktop/run.mjs",
     "desktop:win": "pnpm run build && electron-builder --win",
@@ -65,6 +67,7 @@
     "typescript": "5.9.3",
     "vinext": "1.0.0-beta.5",
     "vite": "8.0.13",
+    "vitest": "^5.1.0",
     "wrangler": "4.92.0"
   },
   "type": "module",

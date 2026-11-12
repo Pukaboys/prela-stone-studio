@@ -15,13 +15,12 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import Num from "@/components/num-field";
-import HolePosition from "@/components/hole-position";
 import { hasIssue, pieceArea, rotateOnSlab, slabAngleOf, type Issue, type Piece, type Project } from "@/lib/model";
 import { SHAPE_LABEL } from "@/lib/shapes";
 import ShapeThumb from "@/components/shape-thumb";
 import { EdgeCutsBadge } from "@/components/edge-cuts";
 import { edgeSummary } from "@/lib/edges";
-import { HoleShapePicker } from "@/components/hole-position";
+import { openingSummary } from "@/components/openings-editor";
 
 type Props = {
   project: Project;
@@ -37,6 +36,7 @@ type Props = {
   onEditShape: (piece: Piece) => void;
   onScan: () => void;
   onEditEdges: (piece: Piece) => void;
+  onEditOpenings: (piece: Piece) => void;
   onContinue: () => void;
 };
 
@@ -56,6 +56,7 @@ export default function PiecesPage({
   onEditShape,
   onScan,
   onEditEdges,
+  onEditOpenings,
   onContinue,
 }: Props) {
   const pieces = project.pieces;
@@ -128,8 +129,7 @@ export default function PiecesPage({
             <span role="columnheader">Slab</span>
             <span role="columnheader">Angle on slab</span>
             <span role="columnheader">Edge cuts</span>
-            <span role="columnheader">Opening W × H</span>
-            <span role="columnheader">Opening distance from edge</span>
+            <span role="columnheader">Openings</span>
             <span role="columnheader" className="sr-only">
               Actions
             </span>
@@ -219,16 +219,15 @@ export default function PiecesPage({
                     <EdgeCutsBadge piece={p} />
                   </button>
                 </span>
-                <span role="cell" className="pc-opening" data-label="Opening W × H">
-                  <span className="pc-pair">
-                    <Num compact label="Opening width" value={p.holeW} onChange={(holeW) => onPatch(p, { holeW })} />
-                    <b aria-hidden>×</b>
-                    <Num compact label="Opening height" value={p.holeH} onChange={(holeH) => onPatch(p, { holeH })} />
-                  </span>
-                  {p.holeW > 0 && p.holeH > 0 && <HoleShapePicker piece={p} onPatch={(values) => onPatch(p, values)} />}
-                </span>
-                <span role="cell" data-label="Opening position">
-                  <HolePosition compact piece={p} onPatch={(values) => onPatch(p, values)} />
+                <span role="cell" data-label="Openings">
+                  <button
+                    className="pc-openings"
+                    title={openingSummary(p)}
+                    aria-label={`Openings of ${p.name}: ${openingSummary(p)}. Edit openings`}
+                    onClick={() => onEditOpenings(p)}
+                  >
+                    <span>{openingSummary(p)}</span>
+                  </button>
                 </span>
                 <span role="cell" className="pc-actions">
                   <button title="Show on slab layout" aria-label={`Show ${p.name} on slab layout`} onClick={() => onPlace(p)}>

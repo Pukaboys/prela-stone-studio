@@ -278,7 +278,7 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .pieces-summary em{font-style:normal;font-size:12px;color:#93a4ac}
 .pieces-summary .ok b{color:#bfdc9d;font-size:14px}.pieces-summary .warn b{color:#efbc80;font-size:14px}
 .pieces-table{border:1px solid #354148;border-radius:9px;overflow:auto;background:#1b2328}
-.pieces-row{display:grid;grid-template-columns:62px minmax(140px,1.3fr) 150px minmax(190px,1.3fr) minmax(140px,1fr) 100px 104px minmax(190px,1.2fr) minmax(240px,1.4fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1444px}
+.pieces-row{display:grid;grid-template-columns:62px minmax(140px,1.3fr) 150px minmax(190px,1.3fr) minmax(140px,1fr) 100px 104px minmax(200px,1.4fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1250px}
 .pieces-row:first-child{border-top:0}
 .pieces-header{background:#202a30;font-size:11.5px;color:#93a4ac;letter-spacing:.02em;padding-top:11px;padding-bottom:11px;position:sticky;top:0;z-index:1}
 .pieces-row:not(.pieces-header):hover{background:#1f292e}
@@ -501,3 +501,28 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .mitre-strip{stroke:none;pointer-events:none}
 .mitre-strip.below{fill:#f2be70;fill-opacity:.85}
 .mitre-strip.above{fill:#65cbd5;fill-opacity:.85}
+
+/* Openings editor */
+.openings{display:grid;gap:10px}
+.opening-card{display:grid;gap:8px;padding:10px;background:#182125;border:1px solid #33414a;border-radius:8px}
+.opening-card .field{margin:0}
+.opening-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+.opening-head input{font-weight:600;font-size:13px;padding:7px 9px}
+.opening-head button{padding:7px;background:transparent}
+.opening-dist{display:grid;grid-template-columns:auto 110px minmax(0,1fr);gap:6px;align-items:center;font-size:12px;color:#a0b0b9}
+.opening-card .opening-actions{margin:0}
+.opening-add{display:flex;flex-wrap:wrap;gap:6px}
+.opening-add button{padding:7px 10px;font-size:12px;border-style:dashed;background:transparent}
+.pc-openings{width:100%;justify-content:flex-start;padding:6px 9px;background:transparent;font-size:12px;text-align:left}
+.pc-openings span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1200px){.opening-dist{grid-template-columns:1fr}.opening-dist>span{display:none}}
+
+/* Sign-in screen */
+.signin{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 30% 20%,#22302a 0,#141a1e 55%)}
+.signin-card{width:min(380px,100%);display:grid;gap:14px;padding:28px;background:#20282d;border:1px solid #354047;border-radius:14px;box-shadow:0 20px 60px -20px #000c}
+.signin-card h1{margin:4px 0 0;font-size:18px;letter-spacing:.08em}
+.signin-card h1 span{font-weight:400;color:#c4cccd;font-size:15px}
+.signin-card>p{margin:0;color:#9aabb3;font-size:13px}
+.signin-card .field{margin:0}
+.signin-card .error{margin:0;font-size:13px}
+.signin-card .brandmark{width:44px;height:44px}

@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Build output: website server and desktop installers.
     "dist/**",
     "release/**",
+    // Separate Expo app with its own tooling.
+    "mobile/**",
   ]),
   {
     // Electron main process and electron-builder hooks are CommonJS.

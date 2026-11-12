@@ -8,7 +8,7 @@ import { useRef, useState } from "react";
 import { FlipHorizontal2, FlipVertical2, RotateCw, ScanLine, Trash2 } from "lucide-react";
 import Num from "@/components/num-field";
 import ShapeScanner, { type ScannedShape } from "@/components/shape-scanner";
-import { pieceArea, pieceHole, type Piece } from "@/lib/model";
+import { pieceArea, pieceHoles, type Piece } from "@/lib/model";
 import {
   CORNER_NAMES,
   SHAPE_LABEL,
@@ -209,7 +209,7 @@ export default function ShapeEditor({
   if (scanning) return <ShapeScanner multiple={false} onUse={useScan} onCancel={() => setScanning(false)} />;
 
   const outline = pieceOutline(d);
-  const hole = pieceHole(d);
+  const holes = pieceHoles(d);
   const pad = Math.max(d.w, d.h) * 0.14;
   const font = Math.max(d.w, d.h) * 0.045;
   const natural = d.shape ? shapeSize(d.shape) : null;
@@ -247,7 +247,7 @@ export default function ShapeEditor({
             aria-label={`${SHAPE_LABEL[kind]} preview, ${d.w} by ${d.h} millimetres`}
           >
             <rect x={0} y={0} width={d.w} height={d.h} className="shape-box" style={{ strokeWidth: font * 0.08 }} />
-            <path d={pathD(outline) + (hole ? pathD(hole) : "")} fillRule="evenodd" className="shape-fill" style={{ strokeWidth: font * 0.12 }} />
+            <path d={pathD(outline) + holes.map(pathD).join("")} fillRule="evenodd" className="shape-fill" style={{ strokeWidth: font * 0.12 }} />
             {/* dimensions */}
             <g className="shape-dim" style={{ fontSize: font, strokeWidth: font * 0.06 }}>
               <line x1={0} y1={-pad * 0.45} x2={d.w} y2={-pad * 0.45} />

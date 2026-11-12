@@ -1,0 +1,28 @@
+# Checks every push and pull request: types, lint, unit tests and a
+# production build. Keeps geometry, placement, mitres, openings, backups and
+# the scanner from silently breaking.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version from "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Type-check
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      - name: Production build
+        run: pnpm run build

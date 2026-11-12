@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Project, Piece } from "@/lib/model";
 import { buildPieceGeometry, applyPiecePose } from "@/lib/piece-mesh";
 
@@ -23,7 +23,6 @@ export default function Assembly3D({
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const select = useRef(onSelect);
-  select.current = onSelect;
   const latest = useRef({
     project,
     selected,
@@ -31,13 +30,18 @@ export default function Assembly3D({
     onMove,
     onTransform,
   });
-  latest.current = { project, selected, onMoveStart, onMove, onTransform };
   const sync = useRef<() => void>(() => {});
   const [mode, setMode] = useState<"move" | "height" | "rotate" | "orbit">(
     "move",
   );
   const modeRef = useRef(mode);
-  modeRef.current = mode;
+  // Keep the latest props for the three.js event handlers, which live outside
+  // React. Updated after render (before effects), not during it.
+  useLayoutEffect(() => {
+    select.current = onSelect;
+    latest.current = { project, selected, onMoveStart, onMove, onTransform };
+    modeRef.current = mode;
+  });
   const geometryKey = JSON.stringify({
     id: project.id,
     slabs: project.slabs,
@@ -61,10 +65,11 @@ export default function Assembly3D({
   useEffect(() => {
     let stopped = false,
       cleanup = () => {};
-    setError("");
-    setTextureError(false);
     async function init() {
       const THREE = await import("three");
+      if (stopped) return;
+      setError("");
+      setTextureError(false);
       const { OrbitControls } =
         await import("three/addons/controls/OrbitControls.js");
       if (stopped || !host.current) return;

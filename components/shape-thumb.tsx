@@ -1,5 +1,5 @@
 /** Small drawing of a piece's outline and opening, scaled to fit. */
-import { pieceHole, type Piece } from "@/lib/model";
+import { pieceHoles, type Piece } from "@/lib/model";
 import { pathD, pieceOutline } from "@/lib/shapes";
 
 export default function ShapeThumb({
@@ -12,7 +12,6 @@ export default function ShapeThumb({
   color?: string;
 }) {
   const pad = Math.max(piece.w, piece.h) * 0.06;
-  const hole = pieceHole(piece);
   return (
     <svg
       className="shape-thumb"
@@ -22,7 +21,7 @@ export default function ShapeThumb({
       aria-hidden
     >
       <path
-        d={pathD(pieceOutline(piece)) + (hole ? pathD(hole) : "")}
+        d={pathD(pieceOutline(piece)) + pieceHoles(piece).map(pathD).join("")}
         fillRule="evenodd"
         fill={color ?? piece.color}
         fillOpacity={0.35}
