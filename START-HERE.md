@@ -18,9 +18,10 @@ To build:
 ## Contents
 
 - app/page.tsx: sales website (features, pricing, FAQ); app/site.css its styles
-- app/login, app/account: sign in / free trial, licence, PayPal checkout, downloads
+- app/login, app/account: sign in / free trial, licence, how to buy, downloads
+- app/admin: owner page (customers; switch on a plan after payment)
 - app/studio/page.tsx: the studio (pieces, slab layout, 2D/3D assembly)
-- app/api/auth, app/api/licence, app/api/paypal: accounts, desktop licences, payments
+- app/api/auth, app/api/licence, app/api/admin: accounts, desktop licences, owner tools
 - app/api/projects, app/api/images: saved projects and slab photos (per account)
 - lib/model.ts: project data model and placement checks
 - lib/plans.ts: prices, trial length, computers per licence
@@ -56,10 +57,13 @@ The app version is in `desktop/app/package.json`.
 ## Selling: accounts, licences and payments
 
 The website sells the studio. Visitors create an account (14-day free trial,
-no card), then buy a plan on My account with PayPal. Prices and plans are in
+no card). To buy, they contact you (details in lib/site-config.ts) and pay by
+bank transfer. You then open /admin (signed in as ADMIN_EMAIL), find the
+customer and press "Add plan" with the amount paid. Prices and plans are in
 lib/plans.ts (Monthly €19, Yearly €199; 2 computers each, 1 during the trial).
-Paying again extends from the current end date. Plans do not renew by
-themselves.
+Adding a plan again extends from the current end date; "End now" locks a
+customer out. Plans do not renew by themselves. (Online payment is not built
+in; an earlier PayPal checkout is in the git history.)
 
 - Online studio (/studio): needs a signed-in account with an active licence.
   Each account only sees its own projects.
@@ -77,9 +81,7 @@ Environment variables on the host (Hostinger: website → Environment variables)
 | Name | Value |
 | --- | --- |
 | LICENSE_PRIVATE_KEY | Contents of release/LICENSE_PRIVATE_KEY.txt. Required. Keep it secret, never commit it. |
-| PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET | From developer.paypal.com → Apps & Credentials |
-| PAYPAL_ENV | `sandbox` while testing, `live` for real payments |
-| ADMIN_EMAIL | Your own account: unlimited licence, sees the existing projects |
+| ADMIN_EMAIL | Your own account: opens /admin, and sees the projects made before accounts existed |
 | SESSION_SECRET | Optional; otherwise generated once and stored in the data folder |
 
 The public half of the licence key is built into the app
@@ -107,7 +109,7 @@ that overlap, overhang or hit a defect.
 ## Tests and checks
 
     pnpm test        # unit tests (geometry, placement, mitres, openings,
-                     # scanner, accounts, licences, PayPal,
+                     # scanner, accounts, licences, owner page,
                      # quote/DXF, auto-arrange)
     pnpm typecheck
     pnpm lint

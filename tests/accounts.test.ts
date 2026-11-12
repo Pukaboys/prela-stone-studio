@@ -2,15 +2,14 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // Throwaway data folder and a test licence key pair (set before the modules load).
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "jeo-accounts-test-"));
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 process.env.LICENSE_PRIVATE_KEY = privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
 process.env.LICENSE_PUBLIC_KEY_TEST = publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("base64");
-process.env.PAYPAL_CLIENT_ID = "test-client";
-process.env.PAYPAL_CLIENT_SECRET = "test-secret";
+process.env.ADMIN_EMAIL = "owner@example.com";
 
 const signup = await import("@/app/api/auth/signup/route");
 const login = await import("@/app/api/auth/login/route");
@@ -21,8 +20,7 @@ const activate = await import("@/app/api/licence/activate/route");
 const refresh = await import("@/app/api/licence/refresh/route");
 const release = await import("@/app/api/licence/release/route");
 const projects = await import("@/app/api/projects/route");
-const order = await import("@/app/api/paypal/order/route");
-const capture = await import("@/app/api/paypal/capture/route");
+const admin = await import("@/app/api/admin/accounts/route");
 const accounts = await import("@/lib/accounts");
 const { checkLicence, verifyLicence } = await import("@/lib/licence-token");
 const { defaultProject } = await import("@/lib/model");
@@ -164,56 +162,50 @@ describe("online studio data", () => {
   });
 });
 
-describe("PayPal checkout", () => {
-  let paid = { value: "199.00", currency: "EUR", custom: "" };
-  beforeAll(() => {
-    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
-      if (url.endsWith("/v1/oauth2/token")) return Response.json({ access_token: "tok" });
-      if (url.endsWith("/v2/checkout/orders") && init?.method === "POST") {
-        const body = JSON.parse(String(init.body));
-        paid.custom = body.purchase_units[0].custom_id;
-        expect(body.purchase_units[0].amount.value).toMatch(/^(19|199)\.00$/); // server-side price
-        return Response.json({ id: "ORDER123ABC" });
-      }
-      if (url.includes("/capture"))
-        return Response.json({
-          id: "ORDER123ABC",
-          status: "COMPLETED",
-          purchase_units: [{ custom_id: paid.custom, payments: { captures: [{ id: "CAP1", status: "COMPLETED", amount: { currency_code: paid.currency, value: paid.value } }] } }],
-        });
-      throw new Error("unexpected fetch " + url);
-    });
-  });
-  afterEach(() => {
-    paid = { value: "199.00", currency: "EUR", custom: paid.custom };
-  });
+describe("owner switches on paid plans", () => {
+  type Row = { id: string; email: string; licence: { plan: string; daysLeft: number; active: boolean }; payments: { note?: string }[] };
+  const grant = (cookie: string, accountId: string, extra: object = {}) =>
+    admin.POST(req("admin/accounts", { body: { accountId, action: "grant", plan: "yearly", amount: "199", note: "Bank ref 42", ...extra }, cookie }));
 
-  it("a verified yearly payment turns the trial into a yearly licence (once per order)", async () => {
-    const cookie = await newUser("jon@example.com");
-    const o = await order.POST(req("paypal/order", { body: { plan: "yearly" }, cookie }));
-    expect(((await o.json()) as { id: string }).id).toBe("ORDER123ABC");
-    const c = await capture.POST(req("paypal/capture", { body: { orderId: "ORDER123ABC" }, cookie }));
-    expect(c.status).toBe(200);
-    const acc = ((await c.json()) as { account: { licence: { plan: string; daysLeft: number; maxDevices: number } } }).account;
-    expect(acc.licence).toMatchObject({ plan: "yearly", daysLeft: 365, maxDevices: 2 });
-    // Capturing the same order again does not extend twice.
-    const again = ((await (await capture.POST(req("paypal/capture", { body: { orderId: "ORDER123ABC" }, cookie }))).json()) as { account: { licence: { daysLeft: number } } }).account;
-    expect(again.licence.daysLeft).toBe(365);
+  it("only the owner can list customers or add plans", async () => {
+    const customer = await newUser("mia@example.com");
+    const mia = (await accounts.findByEmail("mia@example.com"))!;
+    expect((await admin.GET(req("admin/accounts"))).status).toBe(401);
+    expect((await admin.GET(req("admin/accounts", { cookie: customer }))).status).toBe(403);
+    expect((await grant(customer, mia.id)).status).toBe(403);
+    expect((await accounts.findByEmail("mia@example.com"))!.licence.plan).toBe("trial");
   });
-  it("rejects a payment for the wrong amount or another account", async () => {
-    const cookie = await newUser("kai@example.com");
-    await order.POST(req("paypal/order", { body: { plan: "yearly" }, cookie }));
-    paid.value = "1.00";
-    expect((await capture.POST(req("paypal/capture", { body: { orderId: "ORDER123ABC" }, cookie }))).status).toBe(402);
-    paid.value = "199.00";
-    const other = await newUser("lia@example.com");
-    expect((await capture.POST(req("paypal/capture", { body: { orderId: "ORDER123ABC" }, cookie: other }))).status).toBe(402);
-    expect((await order.POST(req("paypal/order", { body: { plan: "lifetime-free" }, cookie }))).status).toBe(400);
+  it("adding a yearly plan turns the trial into a year; adding again extends it", async () => {
+    const owner = await newUser("owner@example.com");
+    const me = ((await (await admin.GET(req("admin/accounts", { cookie: owner }))).json()) as { accounts: Row[] }).accounts.find((r) => r.email === "owner@example.com")!;
+    expect(me.licence.daysLeft).toBeGreaterThan(3000); // the owner never runs out
+    const list = ((await (await admin.GET(req("admin/accounts", { cookie: owner }))).json()) as { accounts: Row[] }).accounts;
+    const mia = list.find((r) => r.email === "mia@example.com")!;
+    expect(list.length).toBeGreaterThan(5);
+    const r = await grant(owner, mia.id);
+    expect(r.status).toBe(200);
+    const row = ((await r.json()) as { account: Row }).account;
+    expect(row.licence).toMatchObject({ plan: "yearly", daysLeft: 365, active: true });
+    expect(row.payments[0].note).toBe("Bank ref 42");
+    const again = ((await (await grant(owner, mia.id, { plan: "monthly", amount: "19" })).json()) as { account: Row }).account;
+    expect(again.licence.daysLeft).toBe(365 + 31);
   });
-  it("renewing extends from the current end date", async () => {
-    const a = (await accounts.findByEmail("jon@example.com"))!;
-    const before = new Date(a.licence.expiresAt).getTime();
-    await accounts.applyPayment(a, "ORDER-RENEW-1", "monthly", "19.00");
-    expect(new Date(a.licence.expiresAt).getTime() - before).toBe(31 * 864e5);
+  it("can end a licence, and rejects bad input", async () => {
+    const owner = (await login.POST(req("auth/login", { body: { email: "owner@example.com", password: "slab-planner-2026" }, ip: ip() }))).headers.get("set-cookie")!.split(";")[0];
+    const mia = (await accounts.findByEmail("mia@example.com"))!;
+    expect((await grant(owner, mia.id, { plan: "lifetime-free" })).status).toBe(400);
+    expect((await grant(owner, mia.id, { amount: "-5" })).status).toBe(400);
+    expect((await grant(owner, "00000000-0000-4000-8000-000000000000")).status).toBe(404);
+    const ended = await admin.POST(req("admin/accounts", { body: { accountId: mia.id, action: "end" }, cookie: owner }));
+    expect(((await ended.json()) as { account: Row }).account.licence.active).toBe(false);
+    const miaCookie = cookieOf(await login.POST(req("auth/login", { body: { email: "mia@example.com", password: "slab-planner-2026" }, ip: ip() })));
+    expect((await projects.GET(req("projects", { cookie: miaCookie }))).status).toBe(402);
+  });
+  it("the owner works on the shared (existing) projects", async () => {
+    const owner = cookieOf(await login.POST(req("auth/login", { body: { email: "owner@example.com", password: "slab-planner-2026" }, ip: ip() })));
+    const p = { ...defaultProject(), name: "Owner project" };
+    await projects.POST(new Request("https://studio.example/api/projects", { method: "POST", headers: { cookie: owner, "content-type": "application/json" }, body: JSON.stringify(p) }));
+    const store = await (await import("@/lib/storage")).getStore();
+    expect((await store.list("projects/")).length).toBeGreaterThan(0);
   });
 });

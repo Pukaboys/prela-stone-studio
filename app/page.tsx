@@ -73,7 +73,7 @@ const FAQ = [
   ["How does the free trial work?", `Create an account and you get ${TRIAL_DAYS} days with every feature, in the browser and on one computer. No card is needed. When the trial ends, choose a plan to keep working — your projects are kept.`],
   ["Do I need an internet connection?", "The desktop app works offline. It checks your licence online about once a day and keeps working offline for up to 30 days."],
   ["On how many computers can I use it?", `Each plan includes ${PLANS[0].devices} computers plus the online studio. You can move a licence to another computer from your account page at any time.`],
-  ["How do I pay?", "Securely with PayPal (PayPal balance or card). Your licence is extended as soon as the payment is confirmed."],
+  ["How do I pay?", "Create your account, then contact us with the plan you want. Pay by bank transfer and your licence is extended the same day — you see it on your account page."],
   ["What kind of photo do I need?", "A normal phone photo showing the whole slab. It does not have to be taken straight on: the corners are found automatically and the photo is straightened. Then enter the slab's measured width, height and thickness."],
   ["Is it a CNC program?", "It is a planning studio. It exports a DXF in millimetres and printable cut lists for your CNC, bridge saw or operator. Always confirm measurements on site before cutting."],
   ["Which file types can I export?", "Cut lists as PDF, DXF for CAD and saws, 3D models (GLB for Windows/Blender/SketchUp, USDZ for iPhone AR), an SVG of the assembly, and project backups with the slab photos."],
@@ -237,7 +237,7 @@ export default function Home() {
                 </article>
               ))}
             </div>
-            <p className="price-note">Prices in euro. Paid securely with PayPal; your licence is extended as soon as the payment is confirmed. Plans do not renew automatically — we remind you before the end.</p>
+            <p className="price-note">Prices in euro. Pay by bank transfer; your licence is extended as soon as the payment arrives. Plans do not renew automatically — we remind you before the end.</p>
           </div>
         </section>
 

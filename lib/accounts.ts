@@ -5,7 +5,8 @@
  * - Sessions: HttpOnly, SameSite=Lax, Secure cookie "<accountId>.<expiry>.<HMAC>"
  *   signed with a server secret (SESSION_SECRET, or one generated and kept in
  *   the data folder). Changing the password ends every other session.
- * - Licence: trial on sign-up, extended by verified PayPal payments; the
+ * - Licence: trial on sign-up, extended by the owner on the admin page after
+ *   the customer pays (bank transfer, cash...); the
  *   desktop app is activated on a limited number of devices.
  * - Storage: the same object store as projects (files on Hostinger).
  */
@@ -13,7 +14,7 @@ import { CURRENCY, TRIAL_DAYS, TRIAL_DEVICES, planById, type PlanId } from "@/li
 import { getSetting, getStore } from "@/lib/storage";
 
 export type Device = { id: string; name: string; activatedAt: string; lastSeen: string };
-export type Payment = { orderId: string; plan: PlanId; amount: string; currency: string; at: string };
+export type Payment = { orderId: string; plan: PlanId; amount: string; currency: string; at: string; note?: string };
 export type Account = {
   id: string;
   email: string;
@@ -100,7 +101,21 @@ async function readJson<T>(key: string): Promise<T | null> {
 }
 const writeJson = async (key: string, value: unknown) => (await getStore()).put(key, JSON.stringify(value), "application/json");
 
-export const getAccount = (id: string) => (/^[a-f0-9-]{36}$/.test(id) ? readJson<Account>(accountKey(id)) : Promise.resolve(null));
+/** The owner (ADMIN_EMAIL) never runs out: their licence is kept 10 years ahead. */
+async function keepOwnerLicence(a: Account) {
+  const admin = (await getSetting("ADMIN_EMAIL"))?.trim().toLowerCase();
+  if (!admin || admin !== a.email) return a;
+  if (new Date(a.licence.expiresAt).getTime() - Date.now() > 365 * 864e5) return a;
+  a.licence = { ...a.licence, plan: "yearly", expiresAt: new Date(Date.now() + 3650 * 864e5).toISOString() };
+  await saveAccount(a);
+  return a;
+}
+
+export async function getAccount(id: string) {
+  if (!/^[a-f0-9-]{36}$/.test(id)) return null;
+  const a = await readJson<Account>(accountKey(id));
+  return a ? keepOwnerLicence(a) : null;
+}
 export async function findByEmail(email: string) {
   const ref = await readJson<{ id: string }>(await emailKey(email));
   return ref ? getAccount(ref.id) : null;
@@ -126,7 +141,7 @@ export async function createAccount(email: string, password: string, name?: stri
   };
   await saveAccount(account);
   await writeJson(await emailKey(e), { id: account.id });
-  return account;
+  return keepOwnerLicence(account);
 }
 
 export async function checkPassword(account: Account, password: string) {
@@ -155,15 +170,27 @@ export function licenceStatus(a: Account, now = Date.now()): LicenceStatus {
   };
 }
 
-/** Extend the licence after a verified payment (idempotent per order id). */
-export async function applyPayment(a: Account, orderId: string, planId: PlanId, amount: string) {
+/** Extend the licence after a payment (idempotent per payment id). */
+export async function applyPayment(a: Account, orderId: string, planId: PlanId, amount: string, note?: string) {
   if (a.payments.some((p) => p.orderId === orderId)) return a;
   const plan = planById(planId)!;
   const base = Math.max(Date.now(), a.licence.plan === "trial" ? Date.now() : new Date(a.licence.expiresAt).getTime());
   a.licence = { ...a.licence, plan: plan.id, expiresAt: new Date(base + plan.days * 864e5).toISOString() };
-  a.payments.push({ orderId, plan: plan.id, amount, currency: CURRENCY, at: new Date().toISOString() });
+  a.payments.push({ orderId, plan: plan.id, amount, currency: CURRENCY, at: new Date().toISOString(), ...(note ? { note } : {}) });
   await saveAccount(a);
   return a;
+}
+
+/** Every customer account (admin page). */
+export async function listAccounts(): Promise<Account[]> {
+  // The file store lists one folder level ("accounts/<id>"), R2 lists every key.
+  const ids = new Set<string>();
+  for (const o of await (await getStore()).list("accounts/")) {
+    const m = /^accounts\/([a-f0-9-]{36})(\/|$)/.exec(o.key);
+    if (m) ids.add(m[1]);
+  }
+  const all = await Promise.all([...ids].map(getAccount));
+  return all.filter((a): a is Account => !!a).sort((x, y) => y.createdAt.localeCompare(x.createdAt));
 }
 
 export function publicAccount(a: Account): PublicAccount {

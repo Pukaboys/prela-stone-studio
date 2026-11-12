@@ -1,19 +1,12 @@
 "use client";
-/** Account: licence status, PayPal checkout, computers, downloads, password. */
-import { useCallback, useEffect, useRef, useState } from "react";
+/** Account: licence status, buying a plan, computers, downloads, password. */
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import "../site.css";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import type { PublicAccount } from "@/lib/accounts";
-import { PLANS, type Plan } from "@/lib/plans";
-
-type PayPalConfig = { clientId: string | null; currency: string; live: boolean };
-type PayPalButtons = { render: (el: HTMLElement) => Promise<void>; close?: () => void };
-type PayPalSdk = { Buttons: (o: object) => PayPalButtons };
-declare global {
-  interface Window {
-    paypal?: PayPalSdk;
-  }
-}
+import { PLANS } from "@/lib/plans";
+import { CONTACT } from "@/lib/site-config";
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
 const PLAN_LABEL: Record<string, string> = { trial: "Free trial", monthly: "Monthly plan", yearly: "Yearly plan" };
@@ -25,80 +18,38 @@ async function post<T>(url: string, data: unknown): Promise<T> {
   return json;
 }
 
-function loadPayPal(clientId: string, currency: string) {
-  return new Promise<PayPalSdk>((resolve, reject) => {
-    if (window.paypal) return resolve(window.paypal);
-    const s = document.createElement("script");
-    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=${currency}&intent=capture&components=buttons`;
-    s.onload = () => (window.paypal ? resolve(window.paypal) : reject(new Error("PayPal did not load.")));
-    s.onerror = () => reject(new Error("PayPal could not be loaded. Check your connection or ad blocker."));
-    document.head.appendChild(s);
-  });
-}
-
-function PayButtons({ plan, config, onPaid, onError }: { plan: Plan; config: PayPalConfig; onPaid: (a: PublicAccount) => void; onError: (m: string) => void }) {
-  const host = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    let buttons: PayPalButtons | undefined;
-    let cancelled = false;
-    if (!config.clientId) return;
-    loadPayPal(config.clientId, config.currency)
-      .then((paypal) => {
-        if (cancelled || !host.current) return;
-        buttons = paypal.Buttons({
-          style: { layout: "vertical", shape: "rect", label: "pay", height: 42 },
-          createOrder: async () => (await post<{ id: string }>("/api/paypal/order", { plan: plan.id })).id,
-          onApprove: async (data: { orderID: string }) => {
-            try {
-              onPaid((await post<{ account: PublicAccount }>("/api/paypal/capture", { orderId: data.orderID })).account);
-            } catch (e) {
-              onError(e instanceof Error ? e.message : String(e));
-            }
-          },
-          onError: () => onError("PayPal reported a problem. No money was taken; please try again."),
-        });
-        host.current.innerHTML = "";
-        return buttons.render(host.current);
-      })
-      .catch((e: Error) => onError(e.message));
-    return () => {
-      cancelled = true;
-      buttons?.close?.();
-    };
-  }, [plan.id, config.clientId, config.currency, onPaid, onError]);
-  return <div ref={host} className="paypal-host" />;
-}
+/** Ways to reach the owner to buy a plan (from lib/site-config). */
+const contactLinks = (subject: string) =>
+  [
+    CONTACT.email && { href: `mailto:${CONTACT.email}?subject=${encodeURIComponent(subject)}`, label: `Email ${CONTACT.email}` },
+    CONTACT.whatsapp && { href: `https://wa.me/${CONTACT.whatsapp}?text=${encodeURIComponent(subject)}`, label: "WhatsApp" },
+    CONTACT.phone && { href: `tel:${CONTACT.phone.replace(/\s+/g, "")}`, label: `Call ${CONTACT.phone}` },
+  ].filter((x): x is { href: string; label: string } => !!x);
 
 export default function AccountPage() {
   const [account, setAccount] = useState<PublicAccount | null>(null);
-  const [config, setConfig] = useState<PayPalConfig | null>(null);
+  const [owner, setOwner] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [pw, setPw] = useState({ current: "", next: "" });
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" })
-      .then((r) => r.json() as Promise<{ account: PublicAccount | null; desktop: boolean }>)
+      .then((r) => r.json() as Promise<{ account: PublicAccount | null; desktop: boolean; owner?: boolean }>)
       .then((me) => {
         if (me.desktop) window.location.replace("/studio");
         else if (!me.account) window.location.replace("/login?next=/account");
-        else setAccount(me.account);
+        else {
+          setAccount(me.account);
+          setOwner(!!me.owner);
+        }
       });
-    fetch("/api/paypal/config")
-      .then((r) => r.json() as Promise<PayPalConfig>)
-      .then(setConfig)
-      .catch(() => setConfig({ clientId: null, currency: "EUR", live: false }));
     fetch("/api/app-version")
       .then((r) => r.json() as Promise<{ version: string | null }>)
       .then((v) => setVersion(v.version))
       .catch(() => undefined);
   }, []);
 
-  const onPaid = useCallback((a: PublicAccount) => {
-    setAccount(a);
-    setMessage({ kind: "ok", text: `Thank you! Your licence now runs until ${fmtDate(a.licence.expiresAt)}.` });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
   const onError = useCallback((text: string) => setMessage({ kind: "error", text }), []);
 
   if (!account) return <div className="site"><SiteHeader signedIn /><main className="account-page wrap" aria-busy="true" /></div>;
@@ -116,6 +67,11 @@ export default function AccountPage() {
           </div>
           <div className="account-actions">
             <a className="btn btn-primary" href="/studio">Open the studio</a>
+            {owner && (
+              <a className="btn btn-ghost" href="/admin">
+                Customers
+              </a>
+            )}
             <button
               className="btn btn-ghost"
               onClick={async () => {
@@ -146,34 +102,44 @@ export default function AccountPage() {
           <p className="muted">
             {l.plan === "trial"
               ? "Choose a plan below to keep using the studio after the trial. Your projects are kept."
-              : "Paying again extends your licence from its current end date."}
+              : "Buying again extends your licence from its current end date."}
           </p>
         </section>
 
         <section className="account-card" id="plans">
           <h2>{l.plan === "trial" ? "Choose a plan" : "Renew or extend"}</h2>
-          {!config ? (
-            <p className="muted">Loading payment options…</p>
-          ) : !config.clientId ? (
-            <p className="muted">Online payment is not set up yet. Please contact us to buy a licence.</p>
-          ) : (
-            <div className="plan-grid">
-              {PLANS.map((p) => (
-                <div key={p.id} className="plan-option">
-                  <div className="plan-head">
-                    <b>{p.name}</b>
-                    {p.note && <span className="badge">{p.note}</span>}
-                  </div>
-                  <p className="price">
-                    €{p.price} <small>{p.per}</small>
-                  </p>
-                  <p className="muted">Every feature · online studio + {p.devices} computers</p>
-                  <PayButtons plan={p} config={config} onPaid={onPaid} onError={onError} />
+          <div className="plan-grid">
+            {PLANS.map((p) => (
+              <div key={p.id} className="plan-option">
+                <div className="plan-head">
+                  <b>{p.name}</b>
+                  {p.note && <span className="badge">{p.note}</span>}
                 </div>
-              ))}
-            </div>
-          )}
-          {config && !config.live && config.clientId && <p className="sandbox-note">Test mode: PayPal sandbox, no real money is taken.</p>}
+                <p className="price">
+                  €{p.price} <small>{p.per}</small>
+                </p>
+                <p className="muted">Every feature · online studio + {p.devices} computers</p>
+              </div>
+            ))}
+          </div>
+          <h3>How to buy</h3>
+          <ol className="buy-steps">
+            <li>Contact us with the plan you want and your account email ({account.email}).</li>
+            <li>We send you the bank details; pay by bank transfer.</li>
+            <li>As soon as the payment arrives your licence is extended. You see it here, and the desktop app updates by itself.</li>
+          </ol>
+          <div className="buy-contact">
+            {contactLinks(`Jeo Stone Studio licence for ${account.email}`).map((c) => (
+              <a key={c.href} className="btn btn-ghost" href={c.href}>
+                {c.label}
+              </a>
+            ))}
+            {contactLinks("").length === 0 && (
+              <Link className="btn btn-ghost" href="/#contact" prefetch={false}>
+                Contact us
+              </Link>
+            )}
+          </div>
         </section>
 
         <section className="account-card">
@@ -256,7 +222,8 @@ export default function AccountPage() {
                     <span>
                       <b>{PLAN_LABEL[p.plan]} · €{p.amount}</b>
                       <small>
-                        {fmtDate(p.at)} · PayPal order {p.orderId}
+                        {fmtDate(p.at)}
+                        {p.note ? ` · ${p.note}` : ""}
                       </small>
                     </span>
                   </li>

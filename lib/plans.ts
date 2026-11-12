@@ -1,12 +1,12 @@
 /**
  * What is sold. Change prices, lengths and device limits here; the website,
- * the PayPal checkout (server-side amounts) and the licences all read this.
+ * the admin page and the licences all read this.
  */
 export type PlanId = "monthly" | "yearly";
 export type Plan = {
   id: PlanId;
   name: string;
-  /** Price in EUR, charged through PayPal. */
+  /** Price in EUR. */
   price: number;
   /** Shown next to the price. */
   per: string;

@@ -184,7 +184,6 @@ html:has(.site) { scroll-behavior: smooth; }
 .site .plan-option { display: grid; gap: 8px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #161e22; }
 .site .plan-head { display: flex; align-items: center; gap: 10px; }
 .site .plan-option .price { font-size: 1.8rem; }
-.site .paypal-host { min-height: 50px; margin-top: 6px; background: #fff; border-radius: 10px; padding: 10px 10px 2px; }
 .site .sandbox-note { color: #ffd88a; font-size: 0.88rem; }
 .site .download-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .site .device-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
@@ -202,3 +201,15 @@ html:has(.site) { scroll-behavior: smooth; }
 .signin-links { font-size: 13px; color: #9aabb3; margin: 0; }
 .signin-links a { color: #bde96e; }
 .button-link { display: inline-flex; justify-content: center; padding: 10px 14px; border-radius: 7px; text-decoration: none; font-weight: 700; }
+
+/* Owner page */
+.site .admin-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
+.site .admin-row { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-alt); }
+.site .admin-who { display: grid; gap: 3px; }
+.site .admin-who small, .site .admin-payments { color: var(--muted); font-size: 0.85rem; }
+.site .admin-grant { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.site .admin-grant select, .site .admin-grant input { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font: inherit; min-width: 0; }
+.site .admin-grant input[inputmode] { width: 90px; }
+.site .admin-grant input:not([inputmode]) { flex: 1 1 200px; width: auto; }
+.site .buy-steps { margin: 4px 0 0; padding-left: 20px; color: var(--muted); line-height: 1.7; }
+.site .buy-contact { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
