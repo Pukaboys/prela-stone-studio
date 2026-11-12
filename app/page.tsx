@@ -4,6 +4,8 @@ import Assembly3D from "@/components/assembly-3d";
 import Num from "@/components/num-field";
 import HolePosition, { HoleShapePicker } from "@/components/hole-position";
 import ShapeThumb from "@/components/shape-thumb";
+import EdgeCutsEditor from "@/components/edge-cuts";
+import { edgeCutsOf, mitreStrips } from "@/lib/edges";
 import ShapeEditor from "@/components/shape-editor";
 import ShapeScanner, { type ScannedShape } from "@/components/shape-scanner";
 import { SHAPE_LABEL, pathD, pieceOutline } from "@/lib/shapes";
@@ -60,12 +62,10 @@ import {
   pieceHole,
   nudgeHole,
   validProject,
-  pieceAngle,
   slabCrop,
   slabImageRect,
   type Project,
   type Piece,
-  type CutAngle,
   type PhotoCrop,
   type Defect,
   type Slab,
@@ -142,12 +142,13 @@ function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: Photo
   const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
   return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%` }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
 }
-type DialogId = "" | "slab" | "photo" | "shape" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
+type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
 const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
   slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
   photo: { title: "Adjust slab photo", description: "Straighten, correct perspective and frame the slab edges." },
   shape: { title: "Piece shape", description: "Rectangle with shaped corners, circle, arch, curved band or free form." },
   scan: { title: "Scan shapes", description: "Trace pieces from a photo of templates or a drawing." },
+  edges: { title: "Edge cuts", description: "Straight or 45° mitre on each side, below or above." },
   projects: { title: "Your projects", description: "Saved projects are available when you return." },
   export: { title: "Export project", description: "Keep a project file or share the planned layout." },
   checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
@@ -1102,6 +1103,11 @@ export default function Studio() {
                 setDialog("shape");
               }}
               onScan={() => setDialog("scan")}
+              onEditEdges={(p) => {
+                setSelected(p.id);
+                setSid(p.slab);
+                setDialog("edges");
+              }}
               onPlace={(p) => {
                 setSelected(p.id);
                 setSid(p.slab);
@@ -1233,6 +1239,15 @@ export default function Studio() {
                             }
                             strokeWidth={selected === p.id ? 10 : 5}
                           />
+                          {mitreStrips(pieceOutline(p), edgeCutsOf(p), pr.slabs.find((x) => x.id === p.slab)?.thickness ?? 20).map((st, k) => (
+                            <path
+                              key={"m" + k}
+                              d={pathD(st.pts.map(m.local))}
+                              className={"mitre-strip " + st.cut}
+                            >
+                              <title>{st.cut === "below" ? "45° mitre below" : "45° mitre above"}</title>
+                            </path>
+                          ))}
                           {holePath && (
                             <path
                               d={holePath}
@@ -1621,21 +1636,12 @@ export default function Studio() {
                 Scroll over the piece on the slab to rotate it: 5° per step,
                 Shift for 1°, Ctrl for 15°.
               </p>
-              <h3>Blade cut angle</h3>
-              <div className="angle-options">
-                {([0, 45] as CutAngle[]).map((angle) => (
-                  <button
-                    key={angle}
-                    className={pieceAngle(piece) === angle ? "active" : ""}
-                    onClick={() => patch({ cutAngle: angle })}
-                  >
-                    <RotateCw size={14} /> {angle}°
-                  </button>
-                ))}
-              </div>
-              <p className="hint">
-                45° cuts the edge with a bevel over the slab; it does not rotate the piece layout.
-              </p>
+              <h3>Edge cuts</h3>
+              <EdgeCutsEditor
+                piece={piece}
+                thickness={pr.slabs.find((x) => x.id === piece.slab)?.thickness ?? 20}
+                onPatch={patch}
+              />
               <h3>Assembly position</h3>
               <div className="twocol">
                 <Num
@@ -1884,6 +1890,25 @@ export default function Studio() {
                 toast.success(`Shape updated: ${SHAPE_LABEL[values.shape?.kind ?? "rect"]}`);
               }}
             />
+          )}
+          {dialog === "edges" && piece && (
+            <>
+              <div className="edges-dialog-head">
+                <ShapeThumb piece={piece} size={44} />
+                <b>{piece.name}</b>
+              </div>
+              <EdgeCutsEditor
+                piece={piece}
+                thickness={pr.slabs.find((x) => x.id === piece.slab)?.thickness ?? 20}
+                onPatch={patch}
+              />
+              <div className="dialog-actions">
+                <span />
+                <button className="primary" onClick={() => setDialog("")}>
+                  Done
+                </button>
+              </div>
+            </>
           )}
           {dialog === "scan" && (
             <ShapeScanner multiple onCancel={() => setDialog("")} onUse={addScannedPieces} />

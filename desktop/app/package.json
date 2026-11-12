@@ -1,7 +1,7 @@
 {
   "name": "prela-stone-studio",
   "productName": "Prela Stone Studio",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "description": "Slab planning and vein matching for Prela Mermer.",
   "author": "Prela Mermer",
   "main": "main.cjs",

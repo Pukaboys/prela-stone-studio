@@ -1,3 +1,4 @@
+import { validEdges, type EdgeCuts } from "@/lib/edges";
 import {
   area,
   containsPolygon,
@@ -86,6 +87,8 @@ export type Piece = {
   holeR?: number;
   /** Piece shape inside its w × h box; undefined = plain rectangle. */
   shape?: PieceShape;
+  /** Per-side edge cut: straight, or 45° mitre below / above. */
+  edges?: EdgeCuts;
   color: string;
 };
 export type Defect = {
@@ -538,6 +541,7 @@ export function validProject(p: any): p is Project {
             n === undefined || (Number.isFinite(n) && Math.abs(n) <= 20000),
         ) &&
         validShape(q.shape) &&
+        validEdges(q.edges) &&
         (q.holeKind === undefined || ["rect", "rounded", "ellipse"].includes(q.holeKind)) &&
         (q.holeR === undefined || (Number.isFinite(q.holeR) && q.holeR >= 0 && q.holeR <= 5000)) &&
         (q.holeEdgeX === undefined || q.holeEdgeX === "left" || q.holeEdgeX === "right") &&

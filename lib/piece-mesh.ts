@@ -6,26 +6,72 @@
 import type * as ThreeModule from "three";
 import { pieceHole, placement, slabCrop, type Piece, type Slab } from "@/lib/model";
 import { containsPolygon, pieceOutline } from "@/lib/shapes";
+import { edgeCutsOf, hasMitre, mitredFaces } from "@/lib/edges";
 
 type Three = typeof ThreeModule;
 
-/** Extruded piece (with opening and optional 45° edge) textured from its slab photo. */
+type V2 = ThreeModule.Vector2;
+
+/**
+ * Solid with different top and bottom faces (45° mitres slant the walls on
+ * mitred edges). Top and bottom outlines correspond vertex by vertex.
+ * Groups: 0 = top and bottom faces (stone), 1 = walls (edge material).
+ */
+function mitredSolid(THREE: Three, top: V2[], bottom: V2[], hole: V2[] | null, thickness: number) {
+  // Contour counter-clockwise and opening clockwise, as ExtrudeGeometry does.
+  if (THREE.ShapeUtils.isClockWise(top)) {
+    top = [...top].reverse();
+    bottom = [...bottom].reverse();
+  }
+  if (hole && !THREE.ShapeUtils.isClockWise(hole)) hole = [...hole].reverse();
+  const pos: number[] = [];
+  const put = (p: V2, z: number) => pos.push(p.x, p.y, z);
+  const cap = (contour: V2[], z: number, flip: boolean) => {
+    const holes = hole ? [hole] : [];
+    const all = [...contour, ...holes.flat()];
+    for (const f of THREE.ShapeUtils.triangulateShape(contour, holes)) {
+      const v = flip ? [f[2], f[1], f[0]] : f;
+      for (const k of v) put(all[k], z);
+    }
+  };
+  const walls = (low: V2[], high: V2[]) => {
+    for (let i = 0; i < low.length; i++) {
+      const j = (i + 1) % low.length;
+      put(low[i], 0); put(low[j], 0); put(high[j], thickness);
+      put(low[i], 0); put(high[j], thickness); put(high[i], thickness);
+    }
+  };
+  cap(top, thickness, false);
+  cap(bottom, 0, true);
+  const capVerts = pos.length / 3;
+  walls(bottom, top);
+  if (hole) walls(hole, hole);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(new Array((pos.length / 3) * 2).fill(0), 2));
+  geometry.addGroup(0, capVerts, 0);
+  geometry.addGroup(capVerts, pos.length / 3 - capVerts, 1);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** Piece solid (shape, opening, mitred edges) textured from its slab photo. */
 export function buildPieceGeometry(THREE: Three, piece: Piece, slab: Slab) {
   // Outline and opening come from the shared shape engine (y flipped: the
   // 3D shape is drawn in the XY plane and then laid flat).
-  const shape = new THREE.Shape(pieceOutline(piece).map((q) => new THREE.Vector2(q.x, -q.y)));
-  const hole = pieceHole(piece);
-  if (hole && containsPolygon(pieceOutline(piece), hole))
-    shape.holes.push(new THREE.Path(hole.map((q) => new THREE.Vector2(q.x, -q.y))));
-  const bevel = piece.cutAngle === 45 ? Math.min(slab.thickness / 2, 10) : 0;
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: slab.thickness,
-    bevelEnabled: bevel > 0,
-    bevelSegments: 1,
-    bevelSize: bevel,
-    bevelThickness: bevel,
-    steps: 1,
-  });
+  const outline = pieceOutline(piece);
+  const holePts = pieceHole(piece);
+  const hole = holePts && containsPolygon(outline, holePts) ? holePts : null;
+  const v2 = (q: { x: number; y: number }) => new THREE.Vector2(q.x, -q.y);
+  let geometry: ThreeModule.BufferGeometry;
+  if (hasMitre(piece)) {
+    const faces = mitredFaces(outline, edgeCutsOf(piece), slab.thickness);
+    geometry = mitredSolid(THREE, faces.top.map(v2), faces.bottom.map(v2), hole ? hole.map(v2) : null, slab.thickness);
+  } else {
+    const shape = new THREE.Shape(outline.map(v2));
+    if (hole) shape.holes.push(new THREE.Path(hole.map(v2)));
+    geometry = new THREE.ExtrudeGeometry(shape, { depth: slab.thickness, bevelEnabled: false, steps: 1 });
+  }
   // Map piece millimetres to where the piece sits on the slab photo (honouring
   // its rotation on the slab and the photo crop) so the veins match the layout.
   const onSlab = placement(piece).slab;

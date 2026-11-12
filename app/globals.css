@@ -278,7 +278,7 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .pieces-summary em{font-style:normal;font-size:12px;color:#93a4ac}
 .pieces-summary .ok b{color:#bfdc9d;font-size:14px}.pieces-summary .warn b{color:#efbc80;font-size:14px}
 .pieces-table{border:1px solid #354148;border-radius:9px;overflow:auto;background:#1b2328}
-.pieces-row{display:grid;grid-template-columns:62px minmax(140px,1.3fr) 150px minmax(190px,1.3fr) minmax(140px,1fr) 100px 92px minmax(190px,1.2fr) minmax(240px,1.4fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1432px}
+.pieces-row{display:grid;grid-template-columns:62px minmax(140px,1.3fr) 150px minmax(190px,1.3fr) minmax(140px,1fr) 100px 104px minmax(190px,1.2fr) minmax(240px,1.4fr) 112px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #2c373d;min-width:1444px}
 .pieces-row:first-child{border-top:0}
 .pieces-header{background:#202a30;font-size:11.5px;color:#93a4ac;letter-spacing:.02em;padding-top:11px;padding-bottom:11px;position:sticky;top:0;z-index:1}
 .pieces-row:not(.pieces-header):hover{background:#1f292e}
@@ -481,3 +481,23 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .slab-angle{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;margin-bottom:2px}
 .slab-angle .field{margin:0}
 .slab-angle button{padding:10px 12px;font-size:12.5px}
+
+/* Edge cuts (mitres) */
+.edge-cuts{display:grid;gap:6px}
+.edge-row{display:grid;grid-template-columns:62px minmax(0,1fr);gap:8px;align-items:center}
+.edge-row.all{padding-top:6px;border-top:1px dashed #354047}
+.edge-name{font-size:12px;color:#a0b0b9}
+.edge-options{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #3a464e;border-radius:7px;overflow:hidden}
+.edge-options button{border:0;border-radius:0;flex-direction:column;gap:2px;padding:5px 2px;font-size:11px;background:transparent;color:#a9b8bf}
+.edge-options button+button{border-left:1px solid #3a464e}
+.edge-options button[aria-checked=true].cut-straight{background:#3a464e;color:#eef3f1}
+.edge-options button[aria-checked=true].cut-below{background:#4a3c22;color:#f6cf8f}
+.edge-options button[aria-checked=true].cut-above{background:#1f3f44;color:#8ee0e8}
+.cut-icon{display:block}
+.edge-cuts .hint{margin-top:4px}
+.edge-badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#b6c3c8}
+.pc-edges{padding:4px 8px;background:transparent;width:100%;justify-content:flex-start}
+.edges-dialog-head{display:flex;align-items:center;gap:10px}
+.mitre-strip{stroke:none;pointer-events:none}
+.mitre-strip.below{fill:#f2be70;fill-opacity:.85}
+.mitre-strip.above{fill:#65cbd5;fill-opacity:.85}
