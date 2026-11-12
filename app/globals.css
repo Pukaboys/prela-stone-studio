@@ -383,3 +383,7 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .hole-edge button[aria-checked=true]{background:#45524b;color:#daf6af}
 .hole-position[aria-disabled=true]{opacity:.55}
 .opening-actions button{font-size:12px}
+
+/* Missing slab photo (e.g. old backup opened in another copy) */
+.thumb .thumb-missing{position:static;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;height:100%;padding:8px;text-align:center;background:repeating-linear-gradient(135deg,#1d262b 0 10px,#222c31 10px 20px);color:#efbc80;font-size:12px;font-weight:600;border-radius:3px}
+.thumb .thumb-missing small{font-size:10.5px;font-weight:400;color:#93a4ac}

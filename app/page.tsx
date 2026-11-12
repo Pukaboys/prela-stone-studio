@@ -62,6 +62,18 @@ import {
   type Defect,
   type Slab,
 } from "@/lib/model";
+/** Slab photo thumbnail with a clear placeholder when the photo is not in this copy. */
+function SlabThumb({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed)
+    return (
+      <span className="thumb-missing" role="img" aria-label={`${alt}: photo missing`}>
+        Photo missing
+        <small>Use Replace photo in Slab settings</small>
+      </span>
+    );
+  return <img src={src} alt={alt} onError={() => setFailed(true)} />;
+}
 function ZoomBoard({
   zoom,
   children,
@@ -654,6 +666,18 @@ export default function Studio() {
       .replace(/[^\p{L}\p{N}]+/gu, "-")
       .replace(/^-|-$/g, "")
       .toLowerCase() || "prela-assembly";
+  /** Backup file with the slab photos embedded, so it opens in any copy of the studio. */
+  async function exportBackup() {
+    const id = toast.loading("Preparing backup with slab photos…");
+    try {
+      const { createBackup } = await import("@/lib/backup");
+      const blob = await createBackup(current.current);
+      download(blob, `${fileBase()}-backup.json`);
+      toast.success(`Backup downloaded (${(blob.size / 1e6).toFixed(1)} MB, photos included)`, { id });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e), { id });
+    }
+  }
   async function exportModel(format: ModelFormat) {
     const id = toast.loading(`Preparing 3D model (.${format})…`);
     try {
@@ -835,7 +859,7 @@ export default function Studio() {
                   onClick={() => setSid(s.id)}
                 >
                   <div className="thumb">
-                    <img src={s.image} alt={s.name} />
+                    <SlabThumb key={s.image} src={s.image} alt={s.name} />
                     <span>{String(i + 1).padStart(2, "0")}</span>
                     {slab.id === s.id && <Check size={16} />}
                   </div>
@@ -1774,16 +1798,7 @@ export default function Studio() {
           )}
           {dialog === "export" && (
             <div className="exportactions">
-              <button
-                onClick={() =>
-                  download(
-                    new Blob([JSON.stringify(pr, null, 2)], {
-                      type: "application/json",
-                    }),
-                    "prela-project.json",
-                  )
-                }
-              >
+              <button onClick={exportBackup}>
                 <Download /> Download project backup
               </button>
               <button onClick={() => jsonFile.current?.click()}>
@@ -1802,7 +1817,8 @@ export default function Studio() {
                 <Download /> Print layout / Save PDF
               </button>
               <p className="hint">
-                Project files reference photos stored in this app. 3D models
+                Backups include the slab photos, so they open on the website and
+                in the desktop app. 3D models
                 are in metres with the slab texture; .glb opens in Windows 3D
                 Viewer, Blender and SketchUp, .usdz in AR on iPhone and iPad.
                 Planning layouts only; not machine-ready cutting files. Review
@@ -1939,28 +1955,30 @@ export default function Studio() {
         accept="application/json"
         hidden
         onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (jsonFile.current) jsonFile.current.value = "";
+          if (!f) return;
+          if (saved === "dirty" && !confirm("Replace unsaved changes with this backup?")) return;
+          const id = toast.loading("Opening backup and restoring slab photos…");
           try {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            const p = JSON.parse(await f.text());
-            if (!validProject(p)) throw Error("Invalid project backup.");
-            if (
-              saved === "dirty" &&
-              !confirm("Replace unsaved changes with this backup?")
-            )
-              return;
+            const { restoreBackup } = await import("@/lib/backup");
+            const { project: p, missing } = await restoreBackup(await f.text());
             checkpoint();
-            p.id = "";
             setPr(p);
             setSid(p.slabs[0].id);
             setSelected(p.pieces[0]?.id || "");
             setSaved("dirty");
             setDialog("");
-            toast.success("Backup opened");
-          } catch (e) {
-            toast.error(String(e));
+            if (missing.length)
+              toast.warning("Backup opened, but some slab photos are missing", {
+                id,
+                duration: 12000,
+                description: `${missing.join(", ")}: this backup was made before photos were included. Export the backup again from the copy that has the photos, or use Replace photo in Slab settings.`,
+              });
+            else toast.success("Backup opened with its slab photos", { id });
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : String(err), { id });
           }
-          if (jsonFile.current) jsonFile.current.value = "";
         }}
       />
     </main>

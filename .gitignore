@@ -45,3 +45,6 @@ next-env.d.ts
 /outputs/
 /work/
 .dev.vars
+
+# desktop installers (electron-builder)
+/release/

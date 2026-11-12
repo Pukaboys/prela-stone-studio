@@ -1,0 +1,65 @@
+# Desktop installers for Prela Stone Studio (Windows + macOS).
+#   pnpm desktop:win   → release/Prela Stone Studio Setup <version>.exe
+#   pnpm desktop:mac   → release/Prela Stone Studio-<version>-<arch>.dmg (run on a Mac / GitHub Actions)
+appId: com.prelamermer.stonestudio
+productName: Prela Stone Studio
+copyright: Copyright © Prela Mermer
+electronVersion: 45.2.2
+
+directories:
+  # Only the tiny Electron shell is packaged as the app; the server is added below.
+  app: desktop/app
+  buildResources: desktop/resources
+  output: release
+
+files:
+  - main.cjs
+  - package.json
+  # The shell needs no npm packages; never bundle the website's dependencies.
+  - "!**/node_modules/**"
+
+# Nothing to install or rebuild for the shell.
+npmRebuild: false
+nodeGypRebuild: false
+
+# The self-contained Node server from `pnpm run build` (dist/standalone),
+# copied as-is next to the app (resources/server).
+extraResources:
+  - from: dist/standalone
+    to: server
+    filter:
+      - "**/*"
+# electron-builder skips node_modules in extraResources; this hook copies the
+# server's node_modules into resources/server after packing.
+afterPack: desktop/after-pack.cjs
+
+asar: true
+compression: normal
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: icon.png
+  artifactName: "Prela Stone Studio Setup ${version}.${ext}"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Prela Stone Studio
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.productivity
+  icon: icon.png
+  artifactName: "Prela Stone Studio-${version}-${arch}.${ext}"
+
+dmg:
+  title: Prela Stone Studio
+
+publish: null

@@ -8,11 +8,14 @@
   "scripts": {
     "install:ci": "bash scripts/install-pnpm.sh",
     "dev": "node scripts/run-framework.mjs dev",
-    "build": "node scripts/run-framework.mjs build && node scripts/next-standalone-layout.mjs",
+    "build": "node scripts/run-framework.mjs build && node scripts/complete-standalone.mjs && node scripts/next-standalone-layout.mjs",
     "start": "node dist/standalone/server.js",
     "preview:worker": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "desktop": "pnpm run build && node desktop/run.mjs",
+    "desktop:win": "pnpm run build && electron-builder --win",
+    "desktop:mac": "pnpm run build && electron-builder --mac"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -52,6 +55,8 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
+    "electron": "45.2.2",
+    "electron-builder": "26.18.0",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.4",
     "react-server-dom-webpack": "19.2.6",

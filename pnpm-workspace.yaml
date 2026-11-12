@@ -9,6 +9,10 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   workerd: true
+  # The Electron binary (~100 MB) is only needed for the desktop app; it is
+  # fetched by the desktop scripts, not by every install (e.g. Hostinger).
+  electron: false
+  electron-winstaller: false
 storeDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}
 cacheDir: ${SITES_PNPM_SHARED_STORE:-.sites-runtime/pnpm-store}/policy-cache
 enableGlobalVirtualStore: false
