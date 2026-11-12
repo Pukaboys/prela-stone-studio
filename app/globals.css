@@ -540,3 +540,8 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
 .quote-table tfoot td{font-weight:600}
 .quote-table tr.total td{font-size:15px;color:#d5efa5;border-top:2px solid #4a5a50}
 .quote-table .muted{color:#8a9ca5}
+
+/* Auto-arrange buttons and mirrored (book-matched) slab photos */
+.canvashead-actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-end}
+.mirrored{transform:scaleX(-1)}
+.mirror-toggle{margin:4px 0 12px}

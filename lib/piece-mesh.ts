@@ -80,7 +80,9 @@ export function buildPieceGeometry(THREE: Three, piece: Piece, slab: Slab) {
   for (let i = 0; i < positions.count; i++) {
     const x = positions.getX(i),
       y = -positions.getY(i);
-    const { x: sx, y: sy } = onSlab({ x, y });
+    const { x: px, y: sy } = onSlab({ x, y });
+    // A book-matched slab shows its photo mirrored left–right.
+    const sx = slab.mirror ? slab.w - px : px;
     uv.setXY(i, crop.x + (sx / slab.w) * crop.w, 1 - (crop.y + (sy / slab.h) * crop.h));
   }
   uv.needsUpdate = true;

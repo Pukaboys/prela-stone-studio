@@ -36,6 +36,9 @@ import {
   SlidersHorizontal,
   ZoomIn,
   ZoomOut,
+  LayoutGrid,
+  Wand2,
+  FlipHorizontal2,
   Printer,
   Receipt,
   LogOut,
@@ -75,7 +78,7 @@ import {
   type Slab,
 } from "@/lib/model";
 /** Slab photo thumbnail with a clear placeholder when the photo is not in this copy. */
-function SlabThumb({ src, alt }: { src: string; alt: string }) {
+function SlabThumb({ src, alt, mirror }: { src: string; alt: string; mirror?: boolean }) {
   const [failed, setFailed] = useState(false);
   if (failed)
     return (
@@ -84,7 +87,7 @@ function SlabThumb({ src, alt }: { src: string; alt: string }) {
         <small>Use Replace photo in Slab settings</small>
       </span>
     );
-  return <img src={src} alt={alt} onError={() => setFailed(true)} />;
+  return <img src={src} alt={alt} className={mirror ? "mirrored" : undefined} onError={() => setFailed(true)} />;
 }
 function ZoomBoard({
   zoom,
@@ -144,7 +147,7 @@ function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: Photo
   function finish(e: React.PointerEvent<HTMLDivElement>) { if (stroke.current.length < 2) { stroke.current = []; setDraft([]); return; } const points = stroke.current, xs = points.map((p) => p.x), ys = points.map((p) => p.y); onAdd({ id: crypto.randomUUID(), slab: slab.id, x: Math.min(...xs) - brush / 2, y: Math.min(...ys) - brush / 2, w: Math.max(brush, Math.max(...xs) - Math.min(...xs) + brush), h: Math.max(brush, Math.max(...ys) - Math.min(...ys) + brush), points, brush }); stroke.current = []; setDraft([]); host.current?.releasePointerCapture(e.pointerId); }
   function line(points: { x: number; y: number }[]) { return points.map((p) => `${p.x},${p.y}`).join(" "); }
   const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
-  return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%` }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
+  return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%`, transform: slab.mirror ? "scaleX(-1)" : undefined }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
 }
 type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "quote" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
 const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
@@ -399,6 +402,17 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
     if (firstId) setSelected(firstId);
     setDialog("");
     toast.success(`Added ${shapes.length} scanned piece${shapes.length > 1 ? "s" : ""}`);
+  }
+  /** Automatic layout; `onlyProblems` keeps well-placed pieces where they are. */
+  async function arrange(onlyProblems: boolean) {
+    const { autoArrange } = await import("@/lib/nesting");
+    const r = autoArrange(current.current, { onlyProblems });
+    if (!r.placed && !r.unplaced.length) return;
+    change(() => r.project);
+    const left = issues(r.project).length;
+    const msg = `${r.placed} piece${r.placed === 1 ? "" : "s"} placed${r.unplaced.length ? `; no room for ${r.unplaced.join(", ")}` : ""}`;
+    if (r.unplaced.length || left) toast.warning(msg, { description: left ? `${left} placement issue${left === 1 ? "" : "s"} left. Add a slab or resize pieces.` : undefined, action: { label: "Undo", onClick: () => undo() } });
+    else toast.success(msg, { action: { label: "Undo", onClick: () => undo() } });
   }
   /** Patch any piece by id (the inspector's `patch` only edits the selection). */
   function patchPiece(id: string, values: Partial<Piece>, record = true) {
@@ -979,7 +993,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                   onClick={() => setSid(s.id)}
                 >
                   <div className="thumb">
-                    <SlabThumb key={s.image} src={s.image} alt={s.name} />
+                    <SlabThumb key={s.image} src={s.image} alt={s.name} mirror={s.mirror} />
                     <span>{String(i + 1).padStart(2, "0")}</span>
                     {slab.id === s.id && <Check size={16} />}
                   </div>
@@ -1171,9 +1185,26 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                   <h2>
                     <span className="sectionno">02</span> Slab layout
                   </h2>
-                  <button className="quiet" onClick={() => setDialog("slab")}>
-                    <SlidersHorizontal size={15} /> Slab settings
-                  </button>
+                  <div className="canvashead-actions">
+                    <button
+                      className="quiet"
+                      title="Place every piece on the slabs automatically (largest first, 4 mm apart)"
+                      onClick={() => arrange(false)}
+                    >
+                      <LayoutGrid size={15} /> Auto-arrange
+                    </button>
+                    <button
+                      className="quiet"
+                      title="Move only pieces that overlap, overhang or hit a defect"
+                      disabled={!warnings.length}
+                      onClick={() => arrange(true)}
+                    >
+                      <Wand2 size={15} /> Fix problems
+                    </button>
+                    <button className="quiet" onClick={() => setDialog("slab")}>
+                      <SlidersHorizontal size={15} /> Slab settings
+                    </button>
+                  </div>
                 </div>
                 <ZoomBoard zoom={zoom}>
                   <svg
@@ -1206,6 +1237,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                       width={slabImage.w}
                       height={slabImage.h}
                       preserveAspectRatio="none"
+                      transform={slab.mirror ? `matrix(-1 0 0 1 ${slab.w} 0)` : undefined}
                       clipPath={`url(#slab-clip-${slab.id})`}
                     />
                     <rect
@@ -1484,7 +1516,11 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                                 transform={(() => {
                                   // slab = origin + R·piece  →  piece = Rᵀ·(slab − origin)
                                   const m = placement(p), c = m.cos, n = m.sin, o = m.origin;
-                                  return `matrix(${c} ${-n} ${n} ${c} ${-(c * o.x + n * o.y)} ${n * o.x - c * o.y})`;
+                                  const [a, b, cc, d, e, f] = [c, -n, n, c, -(c * o.x + n * o.y), n * o.x - c * o.y];
+                                  // A book-matched slab's photo is mirrored left–right first.
+                                  return s.mirror
+                                    ? `matrix(${-a} ${-b} ${cc} ${d} ${a * s.w + e} ${b * s.w + f})`
+                                    : `matrix(${a} ${b} ${cc} ${d} ${e} ${f})`;
                                 })()}
                               />
                             </g>
@@ -1801,6 +1837,19 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                   }
                 />
               </label>
+              <label className="check mirror-toggle">
+                <input
+                  type="checkbox"
+                  checked={!!slab.mirror}
+                  onChange={(e) =>
+                    change((p) => ({
+                      ...p,
+                      slabs: p.slabs.map((x) => (x.id === slab.id ? { ...x, mirror: e.target.checked || undefined } : x)),
+                    }))
+                  }
+                />
+                <FlipHorizontal2 size={15} /> Book-matched slab: show the photo mirrored
+              </label>
               <div className="twocol">
                 {(["w", "h", "thickness"] as const).map((key, i) => (
                   <Num
@@ -1821,7 +1870,7 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
               </div>
               <div className="photo-entry">
                 <div className="photo-entry-thumb">
-                  <img src={slab.image} alt={slab.name} />
+                  <img src={slab.image} alt={slab.name} className={slab.mirror ? "mirrored" : undefined} />
                 </div>
                 <div>
                   <b>Slab photo</b>
