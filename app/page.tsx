@@ -5,6 +5,7 @@ import Num from "@/components/num-field";
 import OpeningsEditor from "@/components/openings-editor";
 import SignIn from "@/components/sign-in";
 import QuotePanel from "@/components/quote-panel";
+import SyncPanel from "@/components/sync-panel";
 import ShapeThumb from "@/components/shape-thumb";
 import EdgeCutsEditor from "@/components/edge-cuts";
 import { edgeCutsOf, mitreStrips } from "@/lib/edges";
@@ -442,10 +443,11 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
       action: { label: "Undo", onClick: () => undo() },
     });
   }
-  async function save() {
+  /** Save to this copy's project store; returns the project id, or null on failure. */
+  async function save(): Promise<string | null> {
     setBusy(true);
     try {
-      const snapshot = pr;
+      const snapshot = current.current;
       const r = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -458,8 +460,10 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
         current.current === snapshot ? "saved" : "dirty",
       );
       toast.success("Project saved");
+      return id;
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
+      return null;
     } finally {
       setBusy(false);
     }
@@ -2021,6 +2025,11 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                   </p>
                 )}
               </div>
+              <SyncPanel
+                saveCurrent={save}
+                onDownloaded={(id) => load(id)}
+                notify={(kind, text) => (kind === "success" ? toast.success(text) : toast.error(text))}
+              />
               <button
                 onClick={() => {
                   if (

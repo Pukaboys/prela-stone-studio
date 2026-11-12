@@ -65,6 +65,8 @@ async function startServer() {
   process.env.HOST = "127.0.0.1";
   process.env.NODE_ENV = "production";
   process.env.DATA_DIR = path.join(app.getPath("userData"), "data");
+  // Enables desktop-only features in the server (website sync).
+  process.env.PRELA_DESKTOP = "1";
   // server.js reads PORT/HOST and starts listening when imported.
   await import(pathToFileURL(path.join(serverDir, "server.js")).href);
   baseUrl = `http://127.0.0.1:${port}`;
