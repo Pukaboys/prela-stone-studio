@@ -82,6 +82,8 @@ async function startServer() {
   migrateOldData(process.env.DATA_DIR);
   // Enables desktop-only features in the server (website sync).
   process.env.JEO_DESKTOP = "1";
+  // Where licences are activated and checked.
+  process.env.JEO_LICENSE_SERVER = LICENSE_SERVER;
   // server.js reads PORT/HOST and starts listening when imported.
   await import(pathToFileURL(path.join(serverDir, "server.js")).href);
   baseUrl = `http://127.0.0.1:${port}`;
@@ -123,15 +125,17 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadURL(baseUrl + "/");
+  mainWindow.loadURL(baseUrl + "/studio");
   mainWindow.on("closed", () => (mainWindow = null));
 }
 
 // ---------------------------------------------------------------- updates
-// GitHub repository with the releases (update if the repository is renamed;
-// GitHub also redirects the old name).
-const REPO = "Pukaboys/prela-stone-studio";
-const RELEASES = `https://api.github.com/repos/${REPO}/releases/latest`;
+// The website sells the app, issues licences and hosts the installers.
+// Set "licenseServer" in desktop/app/package.json to the website address.
+// For testing an unpackaged build, JEO_LICENSE_SERVER can point at a local server.
+const LICENSE_SERVER = String(
+  (!app.isPackaged && process.env.JEO_LICENSE_SERVER) || require("./package.json").licenseServer || "",
+).replace(/\/+$/, "");
 
 /** Compare "1.2.3" style versions: >0 when a is newer than b. */
 function compareVersions(a, b) {
@@ -141,19 +145,15 @@ function compareVersions(a, b) {
 }
 
 /**
- * Ask GitHub for the newest release and offer it. `manual` shows a message
- * even when the app is up to date or offline.
+ * Ask the website for the newest version and offer it. `manual` shows a
+ * message even when the app is up to date or offline.
  */
 async function checkForUpdates(manual = false) {
   try {
-    const res = await fetch(RELEASES, { headers: { Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(8000) });
-    if (res.status === 404) {
-      if (manual) dialog.showMessageBox({ type: "info", message: "No releases published yet.", detail: `You have version ${app.getVersion()}.` });
-      return;
-    }
-    if (!res.ok) throw new Error(`GitHub replied ${res.status}`);
-    const release = await res.json();
-    const latest = String(release.tag_name || "").replace(/^v/, "");
+    if (!LICENSE_SERVER) throw new Error("No website is configured for updates.");
+    const res = await fetch(`${LICENSE_SERVER}/api/app-version`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`The website replied ${res.status}`);
+    const latest = String((await res.json()).version || "").replace(/^v/, "");
     if (latest && compareVersions(latest, app.getVersion()) > 0) {
       const { response } = await dialog.showMessageBox({
         type: "info",
@@ -161,9 +161,9 @@ async function checkForUpdates(manual = false) {
         defaultId: 0,
         cancelId: 1,
         message: `Jeo Stone Studio ${latest} is available`,
-        detail: `You have version ${app.getVersion()}. The download page opens in your browser; install it over this version — your projects stay.`,
+        detail: `You have version ${app.getVersion()}. Your account page opens in the browser; download and install it over this version — your projects stay.`,
       });
-      if (response === 0) shell.openExternal(release.html_url);
+      if (response === 0) shell.openExternal(`${LICENSE_SERVER}/account`);
     } else if (manual) {
       dialog.showMessageBox({ type: "info", message: "You have the latest version.", detail: `Version ${app.getVersion()}.` });
     }
@@ -199,7 +199,7 @@ function buildMenu() {
       role: "help",
       submenu: [
         { label: "Check for Updates…", click: () => checkForUpdates(true) },
-        { label: "Releases on GitHub", click: () => shell.openExternal(`https://github.com/${REPO}/releases`) },
+        { label: "My Account (website)", click: () => LICENSE_SERVER && shell.openExternal(`${LICENSE_SERVER}/account`) },
         { type: "separator" },
         { label: `Version ${app.getVersion()}`, enabled: false },
       ],
@@ -229,21 +229,34 @@ app.on("activate", () => {
  */
 async function smokeTest() {
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true } });
-  await win.loadURL(baseUrl + "/");
+  // Optional: activate with a test account first (JEO_SMOKE_EMAIL / JEO_SMOKE_PASSWORD).
+  let activation = null;
+  if (process.env.JEO_SMOKE_EMAIL) {
+    const res = await fetch(baseUrl + "/api/desktop/licence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: baseUrl },
+      body: JSON.stringify({ action: "activate", email: process.env.JEO_SMOKE_EMAIL, password: process.env.JEO_SMOKE_PASSWORD }),
+    });
+    activation = res.status;
+  }
+  await win.loadURL(baseUrl + "/studio");
   await new Promise((r) => setTimeout(r, 2500));
   const report = await win.webContents.executeJavaScript(`(async () => {
     const save = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: "", name: "Smoke test", slabs: [{ id: "s1", name: "x", w: 3200, h: 2000, thickness: 20, image: "/demo-slab.png" }], pieces: [], defects: [], kerf: 4, margin: 20 }) });
-    const list = await (await fetch("/api/projects")).json();
+    const listRes = await fetch("/api/projects");
+    const list = listRes.ok ? await listRes.json() : [];
     return {
       title: document.title,
       tabs: [...document.querySelectorAll("[data-slot=tabs-trigger]")].map((t) => t.textContent),
       pieceRows: document.querySelectorAll(".pieces-row:not(.pieces-header)").length,
+      activationScreen: !!document.querySelector(".signin-card"),
+      licence: await (await fetch("/api/desktop/licence")).json(),
       saveStatus: save.status,
-      savedProjects: list.length,
+      savedProjects: listRes.ok ? list.length : "locked (" + listRes.status + ")",
     };
   })()`);
-  console.log("SMOKE " + JSON.stringify({ ...report, dataDir: process.env.DATA_DIR, serverDir }));
+  console.log("SMOKE " + JSON.stringify({ activation, ...report, dataDir: process.env.DATA_DIR, serverDir }));
   app.exit(0);
 }
 

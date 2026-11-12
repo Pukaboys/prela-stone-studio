@@ -29,6 +29,7 @@ export default function SyncPanel({
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [url, setUrl] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remote, setRemote] = useState<Remote[] | null>(null);
   const [busy, setBusy] = useState("");
@@ -62,7 +63,7 @@ export default function SyncPanel({
           onSubmit={(e) => {
             e.preventDefault();
             run("connect", async () => {
-              const r = await call({ action: "connect", url, password });
+              const r = await call({ action: "connect", url, email, password });
               setPassword("");
               setStatus({ available: true, connected: true, url: r.url as string });
               notify("success", "Connected to the website.");
@@ -74,13 +75,17 @@ export default function SyncPanel({
             <input type="url" placeholder="https://your-site.example" value={url} onChange={(e) => setUrl(e.target.value)} required />
           </label>
           <label className="field">
-            <span>Team password</span>
+            <span>Account email</span>
+            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+          <label className="field">
+            <span>Password</span>
             <input type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
           <button className="primary" disabled={!!busy || !url}>
             <Link2 size={15} /> {busy === "connect" ? "Connecting…" : "Connect"}
           </button>
-          <p className="hint">The password is used once to sign in; only the session is kept on this computer.</p>
+          <p className="hint">Your password is used once to sign in; only the session is kept on this computer.</p>
         </form>
       ) : (
         <>

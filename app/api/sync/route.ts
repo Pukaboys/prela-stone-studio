@@ -2,7 +2,7 @@
  * Desktop ↔ website sync (desktop app only).
  *
  * The desktop app's local server talks to the website on the user's behalf:
- * it signs in once with the team password and keeps only the session cookie
+ * it signs in once with the account email and password and keeps only the session cookie
  * (never the password) in its data folder. Projects travel with their slab
  * photos; the project ID is kept, so uploading again updates the same copy.
  *
@@ -34,7 +34,8 @@ function normaliseUrl(raw: string) {
 
 async function remote(s: Settings, path: string, init: RequestInit = {}) {
   const res = await fetch(s.url + path, { ...init, headers: { ...(init.headers as object), cookie: s.cookie }, redirect: "manual" });
-  if (res.status === 401) throw Error("The website session has ended. Connect again with the team password.");
+  if (res.status === 401) throw Error("The website session has ended. Connect again with your email and password.");
+  if (res.status === 402) throw Error("Your licence has ended. Renew it on your account page on the website.");
   if (!res.ok) throw Error(`Website replied ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res;
 }
@@ -58,17 +59,16 @@ export async function POST(req: Request) {
   if (!available()) return json({ error: "Sync is only available in the desktop app." }, 404);
   const store = await getStore();
   try {
-    const body = (await req.json()) as { action?: string; url?: string; password?: string; id?: string };
+    const body = (await req.json()) as { action?: string; url?: string; email?: string; password?: string; id?: string };
     if (body.action === "connect") {
       const url = normaliseUrl(String(body.url ?? ""));
-      const res = await fetch(url + "/api/session", {
+      const res = await fetch(url + "/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: String(body.password ?? "") }),
+        body: JSON.stringify({ email: String(body.email ?? ""), password: String(body.password ?? "") }),
       });
-      if (!res.ok) throw Error(res.status === 401 ? "Wrong password." : `The website replied ${res.status}.`);
+      if (!res.ok) throw Error(res.status === 401 ? "Wrong email or password." : `The website replied ${res.status}.`);
       const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
-      // A website without a password needs no cookie.
       const settings: Settings = { url, cookie, connectedAt: new Date().toISOString() };
       await store.put(SETTINGS, JSON.stringify(settings), "application/json");
       return json({ connected: true, url });

@@ -1,4 +1,4 @@
-import { requireSession } from "@/lib/auth";
+import { requireStudio } from "@/lib/studio-access";
 import { getStore } from "@/lib/storage";
 
 const ID = /^[a-zA-Z0-9-]+$/;
@@ -7,11 +7,12 @@ const MAX_BYTES = 8_000_000;
 
 export async function GET(req: Request) {
   try {
-    const denied = await requireSession(req);
-    if (denied) return denied;
+    const access = await requireStudio(req);
+    if (access instanceof Response) return access;
+    const { prefix } = access;
     const id = new URL(req.url).searchParams.get("id");
     if (!id || !ID.test(id)) return new Response("Invalid image", { status: 400 });
-    const obj = await (await getStore()).get("images/" + id);
+    const obj = await (await getStore()).get(prefix + "images/" + id);
     if (!obj) return new Response("Image not found", { status: 404 });
     return new Response(obj.body as BodyInit, {
       headers: {
@@ -28,8 +29,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const denied = await requireSession(req);
-    if (denied) return denied;
+    const access = await requireStudio(req);
+    if (access instanceof Response) return access;
+    const { prefix } = access;
     const mime = req.headers.get("content-type") || "";
     if (!TYPES.includes(mime))
       return new Response("Use a JPG, PNG or WebP image.", { status: 400 });
@@ -39,7 +41,7 @@ export async function POST(req: Request) {
     if (bytes.byteLength > MAX_BYTES)
       return new Response("Image exceeds 8 MB", { status: 413 });
     const id = crypto.randomUUID();
-    await (await getStore()).put("images/" + id, bytes, mime);
+    await (await getStore()).put(prefix + "images/" + id, bytes, mime);
     return Response.json({ url: "/api/images?id=" + id });
   } catch (e) {
     console.error(e);

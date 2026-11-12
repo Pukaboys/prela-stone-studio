@@ -17,19 +17,16 @@ To build:
 
 ## Contents
 
-- app/page.tsx: editor and 2D/3D assembly previews
-- app/globals.css: interface styles
-- app/api/projects: saved-project API
-- app/api/images: slab-image API
+- app/page.tsx: sales website (features, pricing, FAQ); app/site.css its styles
+- app/login, app/account: sign in / free trial, licence, PayPal checkout, downloads
+- app/studio/page.tsx: the studio (pieces, slab layout, 2D/3D assembly)
+- app/api/auth, app/api/licence, app/api/paypal: accounts, desktop licences, payments
+- app/api/projects, app/api/images: saved projects and slab photos (per account)
 - lib/model.ts: project data model and placement checks
-- public/demo-slab.png: illustrative demo texture
-- pnpm-lock.yaml: dependency lockfile
+- lib/plans.ts: prices, trial length, computers per licence
 
-The backend uses Cloudflare Workers and an R2 binding named BUCKET. Local development simulates that binding; deployment on another service needs equivalent storage or an adapted backend. This is not a standalone PHP app.
-
-The archive includes source, configuration, and demo assets. It excludes installed dependencies, Git history, generated builds, credentials, uploaded slab photos, and saved project data. The existing Sites project ID remains in .openai/hosting.json as non-secret deployment configuration.
-
-This version supports manual 2D planning, rectangular pieces, positionable rectangular openings, 90-degree cut rotation, and 3D assembly positioning with Z height and XYZ rotation. Exports are planning layouts, not machine-ready cutting files.
+Storage is Cloudflare R2 when deployed there, otherwise files in DATA_DIR
+(default ~/jeo-stone-studio-data) on the Node server.
 
 ## Desktop app (Windows and macOS)
 
@@ -56,21 +53,48 @@ The installers are not code-signed yet. Windows shows "Windows protected your
 PC" (More info → Run anyway); macOS needs right-click → Open the first time.
 The app version is in `desktop/app/package.json`.
 
-## Website password (important)
+## Selling: accounts, licences and payments
 
-Set the environment variable `STUDIO_PASSWORD` on the host (Hostinger:
-website → Environment variables) to require a team password. Without it,
-anyone with the address can open, change and overwrite projects. Signing in
-gives a 30-day session; changing the password signs everyone out; repeated
-wrong guesses are blocked for 15 minutes. The desktop app needs no password
-(it only listens on this computer).
+The website sells the studio. Visitors create an account (14-day free trial,
+no card), then buy a plan on My account with PayPal. Prices and plans are in
+lib/plans.ts (Monthly €19, Yearly €199; 2 computers each, 1 during the trial).
+Paying again extends from the current end date. Plans do not renew by
+themselves.
+
+- Online studio (/studio): needs a signed-in account with an active licence.
+  Each account only sees its own projects.
+- Desktop app: on first start it asks for the website email and password and
+  activates that computer. The licence is a signed token stored on the
+  computer, so the app works offline; it refreshes daily when online and
+  stops after 30 days without contact or when the licence ends. Customers can
+  remove a computer on My account.
+- Downloads: put the installers and a manifest in the data folder under
+  downloads/ (see lib/downloads.ts). Only accounts with an active licence can
+  download; /api/app-version tells the desktop app about updates.
+
+Environment variables on the host (Hostinger: website → Environment variables):
+
+| Name | Value |
+| --- | --- |
+| LICENSE_PRIVATE_KEY | Contents of release/LICENSE_PRIVATE_KEY.txt. Required. Keep it secret, never commit it. |
+| PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET | From developer.paypal.com → Apps & Credentials |
+| PAYPAL_ENV | `sandbox` while testing, `live` for real payments |
+| ADMIN_EMAIL | Your own account: unlimited licence, sees the existing projects |
+| SESSION_SECRET | Optional; otherwise generated once and stored in the data folder |
+
+The public half of the licence key is built into the app
+(lib/licence-public-key.ts). If the private key is ever lost or leaked,
+generate a new pair; existing desktop activations will then need to sign in
+again. The website address the desktop app talks to is "licenseServer" in
+desktop/app/package.json.
 
 ## Desktop ↔ website sync
 
 In the desktop app: Projects → Website sync → enter the website address and
-the team password once. Then "Upload this project" sends the open project
-with its slab photos; "Show website projects" lists them for download. The
-same project ID is used on both sides, so uploading again updates the copy.
+your account email and password once. Then "Upload this project" sends the
+open project with its slab photos; "Show website projects" lists them for
+download. The same project ID is used on both sides, so uploading again
+updates the copy.
 
 ## Production output
 
@@ -83,7 +107,8 @@ that overlap, overhang or hit a defect.
 ## Tests and checks
 
     pnpm test        # unit tests (geometry, placement, mitres, openings,
-                     # scanner, sign-in, quote/DXF, auto-arrange)
+                     # scanner, accounts, licences, PayPal,
+                     # quote/DXF, auto-arrange)
     pnpm typecheck
     pnpm lint
 
@@ -93,8 +118,8 @@ GitHub runs all of these plus a production build on every push (.github/workflow
 
 Push a tag such as `v1.0.1` to build the Windows and Mac installers on
 GitHub and attach them to a release. The tag sets the app version; the
-desktop app checks for newer releases on start and in Help → Check for
-Updates. Local builds stay at 1.0.0; the sidebar shows the build date and
+desktop app asks the website (/api/app-version) for newer versions on start
+and in Help → Check for Updates. Local builds stay at 1.0.0; the sidebar shows the build date and
 commit so builds can be told apart.
 
 To sign the installers, add these repository secrets (Settings → Secrets →
