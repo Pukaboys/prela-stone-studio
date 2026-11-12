@@ -89,3 +89,43 @@ export default function HolePosition({
     </div>
   );
 }
+
+/** Opening shape: rectangular, rounded corners (undermount sinks), or round / oval (taps, hobs). */
+export function HoleShapePicker({
+  piece,
+  onPatch,
+}: {
+  piece: Piece;
+  onPatch: (values: Partial<Piece>) => void;
+}) {
+  const kind = piece.holeKind ?? "rect";
+  return (
+    <div className="hole-shape">
+      <div className="hole-edge three" role="radiogroup" aria-label="Opening shape">
+        {(
+          [
+            ["rect", "Square"],
+            ["rounded", "Rounded"],
+            ["ellipse", "Round"],
+          ] as const
+        ).map(([k, text]) => (
+          <button
+            key={k}
+            type="button"
+            role="radio"
+            aria-checked={kind === k}
+            onClick={() =>
+              kind !== k &&
+              onPatch({ holeKind: k === "rect" ? undefined : k, ...(k === "rounded" && !piece.holeR ? { holeR: 20 } : {}) })
+            }
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+      {kind === "rounded" && (
+        <Num compact label="Opening corner radius" value={piece.holeR ?? 0} max={5000} onChange={(holeR) => onPatch({ holeR })} />
+      )}
+    </div>
+  );
+}

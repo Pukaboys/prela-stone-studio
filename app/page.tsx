@@ -2,7 +2,11 @@
 import { useState, useRef, useEffect } from "react";
 import Assembly3D from "@/components/assembly-3d";
 import Num from "@/components/num-field";
-import HolePosition from "@/components/hole-position";
+import HolePosition, { HoleShapePicker } from "@/components/hole-position";
+import ShapeThumb from "@/components/shape-thumb";
+import ShapeEditor from "@/components/shape-editor";
+import ShapeScanner, { type ScannedShape } from "@/components/shape-scanner";
+import { SHAPE_LABEL, pathD, pieceOutline, toFootprint } from "@/lib/shapes";
 import PiecesPage from "@/components/pieces-page";
 import AssemblyPad, { applyDelta } from "@/components/assembly-pad";
 import type { ModelFormat } from "@/lib/export-3d";
@@ -44,12 +48,13 @@ import {
   demo,
   colors,
   footprint,
-  opening,
   issues,
   hasIssue,
   pieceGap,
   findFreeSpot,
   removeSlab,
+  pieceArea,
+  pieceHole,
   nudgeHole,
   validProject,
   pieceAngle,
@@ -134,10 +139,12 @@ function DefectPainter({ slab, crop, defects, onAdd }: { slab: Slab; crop: Photo
   const previewAspect = ((c.w * (slab.photoWidth ?? slab.w)) / (c.h * (slab.photoHeight ?? slab.h)));
   return <div><div ref={host} className="defect-painter" style={{ aspectRatio: previewAspect }} onPointerDown={begin} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { stroke.current = []; setDraft([]); }}><img src={slab.image} alt="Slab defect painting surface" style={{ left: `${-c.x * 100 / c.w}%`, top: `${-c.y * 100 / c.h}%`, width: `${100 / c.w}%`, height: `${100 / c.h}%` }} /><svg viewBox={`0 0 ${slab.w} ${slab.h}`} preserveAspectRatio="none">{defects.map((d) => d.points?.length ? <polyline key={d.id} points={line(d.points)} fill="none" stroke="#ff625b" strokeWidth={d.brush ?? brush} strokeLinecap="round" strokeLinejoin="round" /> : <rect key={d.id} x={d.x} y={d.y} width={d.w} height={d.h} fill="#f46d6888" stroke="#ff7770" />)}{draft.length > 1 && <polyline points={line(draft)} fill="none" stroke="#ffd166" strokeWidth={brush} strokeLinecap="round" strokeLinejoin="round" />}</svg></div><label className="brush-control">Brush size <input type="range" min="10" max="180" value={brush} onChange={(e) => setBrush(Number(e.target.value))} /><span>{brush} mm</span></label><p className="hint">Paint defects freely with the brush over damaged areas of the slab.</p></div>;
 }
-type DialogId = "" | "slab" | "photo" | "projects" | "export" | "checks" | "help" | "defects";
+type DialogId = "" | "slab" | "photo" | "shape" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
 const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
   slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
   photo: { title: "Adjust slab photo", description: "Straighten, correct perspective and frame the slab edges." },
+  shape: { title: "Piece shape", description: "Rectangle with shaped corners, circle, arch, curved band or free form." },
+  scan: { title: "Scan shapes", description: "Trace pieces from a photo of templates or a drawing." },
   projects: { title: "Your projects", description: "Saved projects are available when you return." },
   export: { title: "Export project", description: "Keep a project file or share the planned layout." },
   checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
@@ -192,7 +199,7 @@ export default function Studio() {
     warnings = issues(pr),
     slabPieces = pr.pieces.filter((p) => p.slab === slab.id);
   const used =
-    (slabPieces.reduce((a, p) => a + p.w * p.h, 0) / (slab.w * slab.h)) * 100;
+    (slabPieces.reduce((a, p) => a + pieceArea(p), 0) / (slab.w * slab.h)) * 100;
   const assemblyCorners = pr.pieces.flatMap((p) => {
     const angle = ((p.rz ?? 0) * Math.PI) / 180,
       c = Math.cos(angle),
@@ -326,6 +333,44 @@ export default function Studio() {
       description: moving.length ? `${moving.length} piece${moving.length > 1 ? "s" : ""} moved to “${rest[0].name}”.` : undefined,
       action: { label: "Undo", onClick: () => undo() },
     });
+  }
+  /** Add each scanned shape as a free-form piece in the first free spot. */
+  function addScannedPieces(shapes: ScannedShape[]) {
+    if (!shapes.length) return;
+    let firstId = "";
+    change((p) => {
+      let next = p;
+      shapes.forEach((sh, n) => {
+        const id = crypto.randomUUID();
+        if (!n) firstId = id;
+        const spot = findFreeSpot(next, slab.id, sh.w, sh.h) ?? { x: next.margin, y: next.margin };
+        next = {
+          ...next,
+          pieces: [
+            ...next.pieces,
+            {
+              id,
+              name: `Scanned ${next.pieces.length + 1}`,
+              slab: slab.id,
+              w: sh.w,
+              h: sh.h,
+              ...spot,
+              ax: 0,
+              ay: Math.max(0, ...next.pieces.map((q) => q.ay + q.h + 20)),
+              rot: false,
+              holeW: 0,
+              holeH: 0,
+              color: colors[next.pieces.length % colors.length],
+              shape: { kind: "polygon", points: sh.points },
+            },
+          ],
+        };
+      });
+      return next;
+    });
+    if (firstId) setSelected(firstId);
+    setDialog("");
+    toast.success(`Added ${shapes.length} scanned piece${shapes.length > 1 ? "s" : ""}`);
   }
   /** Patch any piece by id (the inspector's `patch` only edits the selection). */
   function patchPiece(id: string, values: Partial<Piece>, record = true) {
@@ -1016,6 +1061,12 @@ export default function Studio() {
               onAdd={addPiece}
               onDuplicate={duplicatePiece}
               onDelete={deletePiece}
+              onEditShape={(p) => {
+                setSelected(p.id);
+                setSid(p.slab);
+                setDialog("shape");
+              }}
+              onScan={() => setDialog("scan")}
               onPlace={(p) => {
                 setSelected(p.id);
                 setSid(p.slab);
@@ -1099,8 +1150,13 @@ export default function Studio() {
                     {slabPieces.map((p) => {
                       // Draw the slab footprint: a 90° rotated piece occupies h × w.
                       const f = footprint(p),
-                        slabHole = opening(p, true),
-                        hole = { ...slabHole, x: slabHole.x - p.x, y: slabHole.y - p.y },
+                        shapePath = pathD(pieceOutline(p).map((q) => toFootprint(p, q))),
+                        holePts = pieceHole(p),
+                        holePath = holePts ? pathD(holePts.map((q) => toFootprint(p, q))) : "",
+                        plain = !p.shape || p.shape.kind === "rect",
+                        labelW = Math.max(0, Math.min(f.w - 36, 510)),
+                        labelX = plain ? 18 : (f.w - labelW) / 2,
+                        labelY = plain ? 18 : f.h / 2 - 60,
                         index = pr.pieces.indexOf(p) + 1;
                       return (
                         <g
@@ -1116,11 +1172,19 @@ export default function Studio() {
                           onPointerCancel={() => (drag.current = null)}
                           className="draggable"
                         >
-                          <rect
-                            x={0}
-                            y={0}
-                            width={f.w}
-                            height={f.h}
+                          {!plain && (
+                            <rect
+                              width={f.w}
+                              height={f.h}
+                              fill="none"
+                              stroke={p.color}
+                              strokeOpacity={0.35}
+                              strokeWidth={3}
+                              strokeDasharray="10 10"
+                            />
+                          )}
+                          <path
+                            d={shapePath}
                             fill={p.color}
                             fillOpacity={selected === p.id ? 0.24 : 0.1}
                             stroke={
@@ -1130,12 +1194,9 @@ export default function Studio() {
                             }
                             strokeWidth={selected === p.id ? 10 : 5}
                           />
-                          {p.holeW > 0 && p.holeH > 0 && (
-                            <rect
-                              x={hole.x}
-                              y={hole.y}
-                              width={hole.w}
-                              height={hole.h}
+                          {holePath && (
+                            <path
+                              d={holePath}
                               fill="#151b1f99"
                               stroke={p.color}
                               strokeWidth={5}
@@ -1145,14 +1206,14 @@ export default function Studio() {
                           {showLabels && (
                             <>
                               <rect
-                                x={18}
-                                y={18}
-                                width={Math.max(0, Math.min(f.w - 36, 510))}
+                                x={labelX}
+                                y={labelY}
+                                width={labelW}
                                 height={120}
                                 rx={12}
                                 fill="#14201fe8"
                               />
-                              <text x={45} y={97} fontSize={55} fill={p.color}>
+                              <text x={labelX + 27} y={labelY + 79} fontSize={55} fill={p.color}>
                                 {String(index).padStart(2, "0")} · {p.name}
                               </text>
                               <text
@@ -1289,7 +1350,9 @@ export default function Studio() {
                       />
                       {pr.pieces.map((p, i) => {
                         const s = pr.slabs.find((s) => s.id === p.slab)!,
-                          hole = opening(p),
+                          holePts = pieceHole(p),
+                          outlinePath = pathD(pieceOutline(p)),
+                          holePath = holePts ? pathD(holePts) : "",
                           img = slabImageRect(s);
                         return (
                           <g
@@ -1308,12 +1371,7 @@ export default function Studio() {
                             <defs>
                               <clipPath id={"clip-" + p.id}>
                                 <path
-                                  d={
-                                    `M0 0H${p.w}V${p.h}H0Z` +
-                                    (p.holeW && p.holeH
-                                      ? ` M${hole.x} ${hole.y}v${p.holeH}h${p.holeW}v-${p.holeH}Z`
-                                      : "")
-                                  }
+                                  d={outlinePath + holePath}
                                   clipRule="evenodd"
                                 />
                               </clipPath>
@@ -1334,9 +1392,8 @@ export default function Studio() {
                                 }
                               />
                             </g>
-                            <rect
-                              width={p.w}
-                              height={p.h}
+                            <path
+                              d={outlinePath + holePath}
                               fill="none"
                               stroke={selected === p.id ? p.color : "#727777"}
                               strokeWidth={selected === p.id ? 6 : 2}
@@ -1461,6 +1518,20 @@ export default function Studio() {
                   onChange={(e) => patch({ name: e.target.value.slice(0, 60) })}
                 />
               </label>
+              <button className="shape-entry" onClick={() => setDialog("shape")}>
+                <ShapeThumb piece={piece} size={46} />
+                <span>
+                  <b>{SHAPE_LABEL[piece.shape?.kind ?? "rect"]}</b>
+                  <small>Edit shape, corners and curves</small>
+                </span>
+                <ArrowUpRight size={15} />
+              </button>
+              {piece.shape?.kind === "bend" ? (
+                <p className="hint">
+                  Size {piece.w} × {piece.h} mm, set by the curved band&apos;s
+                  values in the shape editor.
+                </p>
+              ) : (
               <div className="twocol">
                 <Num
                   label="Width"
@@ -1475,6 +1546,7 @@ export default function Studio() {
                   onChange={(h) => patch({ h })}
                 />
               </div>
+              )}
               <h3>Position on slab</h3>
               {piece.slab !== slab.id && (
                 <button
@@ -1568,6 +1640,7 @@ export default function Studio() {
                   onChange={(holeH) => patch({ holeH })}
                 />
               </div>
+              <HoleShapePicker piece={piece} onPatch={patch} />
               <HolePosition piece={piece} onPatch={patch} />
               <div className="opening-actions" role="group" aria-label="Nudge opening">
                 {(
@@ -1641,7 +1714,11 @@ export default function Studio() {
       </div>
       <Dialog open={!!dialog} onOpenChange={(o) => !o && setDialog("")}>
         <DialogContent
-          className={"studio-dialog" + (dialog === "photo" ? " photo-dialog" : "")}
+          className={
+            "studio-dialog" +
+            (dialog === "photo" ? " photo-dialog" : "") +
+            (dialog === "shape" || dialog === "scan" ? " wide-dialog" : "")
+          }
         >
           <DialogTitle>{dialog && dialogCopy[dialog].title}</DialogTitle>
           <DialogDescription>
@@ -1741,6 +1818,21 @@ export default function Studio() {
                 </button>
               </div>
             </>
+          )}
+          {dialog === "shape" && piece && (
+            <ShapeEditor
+              key={piece.id}
+              piece={piece}
+              onCancel={() => setDialog("")}
+              onApply={(values) => {
+                patch(values);
+                setDialog("");
+                toast.success(`Shape updated: ${SHAPE_LABEL[values.shape?.kind ?? "rect"]}`);
+              }}
+            />
+          )}
+          {dialog === "scan" && (
+            <ShapeScanner multiple onCancel={() => setDialog("")} onUse={addScannedPieces} />
           )}
           {dialog === "photo" && (
             <PhotoEditor

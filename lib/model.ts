@@ -1,3 +1,17 @@
+import {
+  area,
+  containsPolygon,
+  holeOutline,
+  pieceOutline,
+  roundedRect,
+  toFootprint,
+  tooClose,
+  validShape,
+  type HoleKind,
+  type PieceShape,
+  type Pt,
+} from "@/lib/shapes";
+
 export type PhotoCrop = { x: number; y: number; w: number; h: number };
 export type PhotoQuad = {
   tl: { x: number; y: number };
@@ -64,6 +78,12 @@ export type Piece = {
   holeDX?: number;
   holeEdgeY?: HoleEdgeY;
   holeDY?: number;
+  /** Opening shape: rectangular (default), rounded corners, or round/oval. */
+  holeKind?: HoleKind;
+  /** Corner radius for a rounded opening (mm). */
+  holeR?: number;
+  /** Piece shape inside its w × h box; undefined = plain rectangle. */
+  shape?: PieceShape;
   color: string;
 };
 export type Defect = {
@@ -337,8 +357,33 @@ export function nudgeHole(p: Piece, dx: number, dy: number): Partial<Piece> {
   });
 }
 
+/** Opening outline in piece-local mm, or null for a solid piece. */
+export function pieceHole(p: Piece): Pt[] | null {
+  if (!(p.holeW > 0 && p.holeH > 0)) return null;
+  return holeOutline(opening(p), p.holeKind, p.holeR ?? 0);
+}
+
+/** Finished stone area of a piece in mm² (shape minus opening). */
+export function pieceArea(p: Piece) {
+  const hole = pieceHole(p);
+  return Math.max(0, area(pieceOutline(p)) - (hole ? area(hole) : 0));
+}
+
+/** Piece outline in slab millimetres (position and 90° rotation applied). */
+export function outlineOnSlab(p: Piece): Pt[] {
+  return pieceOutline(p).map((q) => {
+    const f = toFootprint(p, q);
+    return { x: p.x + f.x, y: p.y + f.y };
+  });
+}
+
+/**
+ * Placement checks. Pieces are compared by their real outlines (circles,
+ * arches, curves, free forms), not their bounding boxes.
+ */
 export function issues(pr: Project): Issue[] {
   const out: Issue[] = [];
+  const outlines = new Map(pr.pieces.map((p) => [p.id, outlineOnSlab(p)]));
   for (const p of pr.pieces) {
     const s = pr.slabs.find((s) => s.id === p.slab);
     const b = footprint(p);
@@ -352,36 +397,19 @@ export function issues(pr: Project): Issue[] {
       out.push({ id: p.id, text: p.name + ": outside usable slab edge" });
     if (p.holeW > 0 !== p.holeH > 0 || p.holeW >= p.w || p.holeH >= p.h)
       out.push({ id: p.id, text: p.name + ": invalid opening dimensions" });
-    const hole = opening(p);
-    if (
-      p.holeW > 0 &&
-      p.holeH > 0 &&
-      (hole.x < 0 ||
-        hole.y < 0 ||
-        hole.x + hole.w > p.w ||
-        hole.y + hole.h > p.h)
-    )
+    const hole = pieceHole(p);
+    if (hole && !containsPolygon(pieceOutline(p), hole))
       out.push({ id: p.id, text: p.name + ": opening extends outside piece" });
+    const mine = outlines.get(p.id)!;
     for (const q of pr.pieces) {
       if (q.id <= p.id || q.slab !== p.slab) continue;
-      const c = footprint(q);
-      if (
-        p.x < q.x + c.w + pr.kerf &&
-        p.x + b.w + pr.kerf > q.x &&
-        p.y < q.y + c.h + pr.kerf &&
-        p.y + b.h + pr.kerf > q.y
-      ) {
+      if (tooClose(mine, outlines.get(q.id)!, pr.kerf)) {
         const text = p.name + " / " + q.name + ": overlap or insufficient blade gap";
         out.push({ id: p.id, related: q.id, text });
       }
     }
     for (const d of pr.defects.filter((d) => d.slab === p.slab)) {
-      if (
-        p.x < d.x + d.w &&
-        p.x + b.w > d.x &&
-        p.y < d.y + d.h &&
-        p.y + b.h > d.y
-      )
+      if (tooClose(mine, roundedRect(d.w, d.h, undefined, d.x, d.y), 0))
         out.push({ id: p.id, text: p.name + ": intersects a marked defect" });
     }
   }
@@ -441,6 +469,9 @@ export function validProject(p: any): p is Project {
           (n) =>
             n === undefined || (Number.isFinite(n) && Math.abs(n) <= 20000),
         ) &&
+        validShape(q.shape) &&
+        (q.holeKind === undefined || ["rect", "rounded", "ellipse"].includes(q.holeKind)) &&
+        (q.holeR === undefined || (Number.isFinite(q.holeR) && q.holeR >= 0 && q.holeR <= 5000)) &&
         (q.holeEdgeX === undefined || q.holeEdgeX === "left" || q.holeEdgeX === "right") &&
         (q.holeEdgeY === undefined || q.holeEdgeY === "front" || q.holeEdgeY === "back") &&
         [q.holeDX, q.holeDY].every(

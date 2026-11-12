@@ -4,35 +4,19 @@
  * Units are millimetres; the assembly floor is the XZ plane, Y is up.
  */
 import type * as ThreeModule from "three";
-import { opening, slabCrop, type Piece, type Slab } from "@/lib/model";
+import { pieceHole, slabCrop, type Piece, type Slab } from "@/lib/model";
+import { containsPolygon, pieceOutline } from "@/lib/shapes";
 
 type Three = typeof ThreeModule;
 
 /** Extruded piece (with opening and optional 45° edge) textured from its slab photo. */
 export function buildPieceGeometry(THREE: Three, piece: Piece, slab: Slab) {
-  const shape = new THREE.Shape();
-  shape.moveTo(0, 0);
-  shape.lineTo(0, -piece.h);
-  shape.lineTo(piece.w, -piece.h);
-  shape.lineTo(piece.w, 0);
-  shape.closePath();
-  const hole = opening(piece);
-  if (
-    hole.w > 0 &&
-    hole.h > 0 &&
-    hole.x >= 0 &&
-    hole.y >= 0 &&
-    hole.x + hole.w <= piece.w &&
-    hole.y + hole.h <= piece.h
-  ) {
-    const path = new THREE.Path();
-    path.moveTo(hole.x, -hole.y);
-    path.lineTo(hole.x + hole.w, -hole.y);
-    path.lineTo(hole.x + hole.w, -hole.y - hole.h);
-    path.lineTo(hole.x, -hole.y - hole.h);
-    path.closePath();
-    shape.holes.push(path);
-  }
+  // Outline and opening come from the shared shape engine (y flipped: the
+  // 3D shape is drawn in the XY plane and then laid flat).
+  const shape = new THREE.Shape(pieceOutline(piece).map((q) => new THREE.Vector2(q.x, -q.y)));
+  const hole = pieceHole(piece);
+  if (hole && containsPolygon(pieceOutline(piece), hole))
+    shape.holes.push(new THREE.Path(hole.map((q) => new THREE.Vector2(q.x, -q.y))));
   const bevel = piece.cutAngle === 45 ? Math.min(slab.thickness / 2, 10) : 0;
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth: slab.thickness,

@@ -11,12 +11,16 @@ import {
   Crosshair,
   Plus,
   RotateCw,
+  ScanLine,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
 import Num from "@/components/num-field";
 import HolePosition from "@/components/hole-position";
-import { hasIssue, pieceAngle, type Issue, type Piece, type Project } from "@/lib/model";
+import { hasIssue, pieceAngle, pieceArea, type Issue, type Piece, type Project } from "@/lib/model";
+import { SHAPE_LABEL } from "@/lib/shapes";
+import ShapeThumb from "@/components/shape-thumb";
+import { HoleShapePicker } from "@/components/hole-position";
 
 type Props = {
   project: Project;
@@ -29,6 +33,8 @@ type Props = {
   onDuplicate: (piece: Piece) => void;
   onDelete: (piece: Piece) => void;
   onPlace: (piece: Piece) => void;
+  onEditShape: (piece: Piece) => void;
+  onScan: () => void;
   onContinue: () => void;
 };
 
@@ -45,10 +51,12 @@ export default function PiecesPage({
   onDuplicate,
   onDelete,
   onPlace,
+  onEditShape,
+  onScan,
   onContinue,
 }: Props) {
   const pieces = project.pieces;
-  const area = pieces.reduce((a, p) => a + p.w * p.h - p.holeW * p.holeH, 0);
+  const area = pieces.reduce((a, p) => a + pieceArea(p), 0);
   const flagged = pieces.filter((p) => hasIssue(warnings, p.id)).length;
 
   return (
@@ -66,6 +74,9 @@ export default function PiecesPage({
         <div className="pieces-head-actions">
           <button onClick={onAdd}>
             <Plus /> Add piece
+          </button>
+          <button onClick={onScan}>
+            <ScanLine /> Scan shapes
           </button>
           <button className="primary" onClick={onContinue} disabled={!pieces.length}>
             Plan cuts on slab <ArrowRight />
@@ -109,6 +120,7 @@ export default function PiecesPage({
           <div className="pieces-row pieces-header" role="row">
             <span role="columnheader">#</span>
             <span role="columnheader">Name</span>
+            <span role="columnheader">Shape</span>
             <span role="columnheader">Width × height</span>
             <span role="columnheader">Slab</span>
             <span role="columnheader">Orientation</span>
@@ -148,11 +160,28 @@ export default function PiecesPage({
                     onChange={(e) => onPatch(p, { name: e.target.value.slice(0, 60) })}
                   />
                 </span>
-                <span role="cell" className="pc-pair" data-label="Width × height">
-                  <Num compact label="Width" value={p.w} min={10} onChange={(w) => onPatch(p, { w })} />
-                  <b aria-hidden>×</b>
-                  <Num compact label="Height" value={p.h} min={10} onChange={(h) => onPatch(p, { h })} />
+                <span role="cell" data-label="Shape">
+                  <button
+                    className="pc-shape"
+                    title="Edit shape"
+                    aria-label={`Shape of ${p.name}: ${SHAPE_LABEL[p.shape?.kind ?? "rect"]}. Edit shape`}
+                    onClick={() => onEditShape(p)}
+                  >
+                    <ShapeThumb piece={p} size={30} />
+                    <span>{SHAPE_LABEL[p.shape?.kind ?? "rect"]}</span>
+                  </button>
                 </span>
+                {p.shape?.kind === "bend" ? (
+                  <span role="cell" className="pc-fixed" data-label="Width × height" title="Set by the curved band in the shape editor">
+                    {p.w} × {p.h} mm
+                  </span>
+                ) : (
+                  <span role="cell" className="pc-pair" data-label="Width × height">
+                    <Num compact label="Width" value={p.w} min={10} onChange={(w) => onPatch(p, { w })} />
+                    <b aria-hidden>×</b>
+                    <Num compact label="Height" value={p.h} min={10} onChange={(h) => onPatch(p, { h })} />
+                  </span>
+                )}
                 <span role="cell" data-label="Slab">
                   <select
                     aria-label={`Slab for ${p.name}`}
@@ -189,10 +218,13 @@ export default function PiecesPage({
                     ))}
                   </div>
                 </span>
-                <span role="cell" className="pc-pair" data-label="Opening W × H">
-                  <Num compact label="Opening width" value={p.holeW} onChange={(holeW) => onPatch(p, { holeW })} />
-                  <b aria-hidden>×</b>
-                  <Num compact label="Opening height" value={p.holeH} onChange={(holeH) => onPatch(p, { holeH })} />
+                <span role="cell" className="pc-opening" data-label="Opening W × H">
+                  <span className="pc-pair">
+                    <Num compact label="Opening width" value={p.holeW} onChange={(holeW) => onPatch(p, { holeW })} />
+                    <b aria-hidden>×</b>
+                    <Num compact label="Opening height" value={p.holeH} onChange={(holeH) => onPatch(p, { holeH })} />
+                  </span>
+                  {p.holeW > 0 && p.holeH > 0 && <HoleShapePicker piece={p} onPatch={(values) => onPatch(p, values)} />}
                 </span>
                 <span role="cell" data-label="Opening position">
                   <HolePosition compact piece={p} onPatch={(values) => onPatch(p, values)} />
