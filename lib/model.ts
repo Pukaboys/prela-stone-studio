@@ -1,3 +1,4 @@
+import DEFAULT_PROJECT from "@/lib/default-project.json";
 import { validPricing, type Pricing } from "@/lib/pricing";
 import { validEdges, validFinishes, type EdgeCuts, type EdgeFinishes } from "@/lib/edges";
 import {
@@ -203,6 +204,17 @@ export function demo(): Project {
     margin: 20,
   };
 }
+/**
+ * The project the studio opens with (lib/default-project.json): the
+ * "Kitchen study · 01" setup. Returns a fresh copy so edits never change it.
+ */
+export function defaultProject(): Project {
+  const p = structuredClone(DEFAULT_PROJECT) as unknown;
+  if (!validProject(p)) return demo();
+  p.id = "";
+  return p;
+}
+
 export const pieceAngle = (p: Piece) => p.cutAngle ?? 0;
 
 /** Default crop that fills the slab rectangle with the photo (center crop, no stretching). */

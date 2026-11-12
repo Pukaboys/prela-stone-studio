@@ -69,7 +69,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import {
-  demo,
+  defaultProject,
   colors,
   footprint,
   issues,
@@ -108,7 +108,7 @@ export default function Studio() {
 }
 
 function StudioApp({ canSignOut }: { canSignOut: boolean }) {
-  const [pr, setPr] = useState<Project>(demo),
+  const [pr, setPr] = useState<Project>(defaultProject),
     [sid, setSid] = useState("s1"),
     [selected, setSelected] = useState("p1"),
     [view, setView] = useState("pieces"),
@@ -1619,11 +1619,12 @@ function StudioApp({ canSignOut }: { canSignOut: boolean }) {
                   )
                     return;
                   checkpoint();
-                  const p = demo();
+                  // Same slab, defect marks, saw settings and prices as the default project.
+                  const p = defaultProject();
                   p.name = "Untitled project";
                   p.pieces = [];
                   setPr(p);
-                  setSid("s1");
+                  setSid(p.slabs[0].id);
                   setSelected("");
                   setSaved("new");
                   setDialog("");
