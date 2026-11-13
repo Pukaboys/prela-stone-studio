@@ -13,6 +13,7 @@
  * - Storage: the same object store as projects (files on Hostinger).
  */
 import { BROWSER_IDLE_DAYS, CURRENCY, MAX_BROWSERS, TRIAL_DAYS, TRIAL_DEVICES, planById, type PlanId } from "@/lib/plans";
+import { mailEnabled } from "@/lib/mail";
 import { getSetting, getStore } from "@/lib/storage";
 
 export type Device = { id: string; name: string; activatedAt: string; lastSeen: string };
@@ -32,6 +33,10 @@ export type Account = {
   payments: Payment[];
   /** Signed-in browsers (at most MAX_BROWSERS). */
   sessions?: WebSession[];
+  /** false until the sign-up link is clicked (only when email is set up); missing = confirmed. */
+  emailVerified?: boolean;
+  /** Reminder emails already sent, keyed "<expiresAt>:<kind>" (a renewal starts fresh). */
+  reminders?: Record<string, string>;
 };
 export type PublicAccount = {
   id: string;
@@ -42,6 +47,7 @@ export type PublicAccount = {
   payments: Payment[];
   browsers: (WebSession & { current: boolean })[];
   maxBrowsers: number;
+  emailVerified: boolean;
 };
 export type LicenceStatus = { plan: PlanId | "trial"; active: boolean; expiresAt: string; daysLeft: number; maxDevices: number };
 
@@ -113,10 +119,34 @@ const writeJson = async (key: string, value: unknown) => (await getStore()).put(
 async function keepOwnerLicence(a: Account) {
   const admin = (await getSetting("ADMIN_EMAIL"))?.trim().toLowerCase();
   if (!admin || admin !== a.email) return a;
-  if (new Date(a.licence.expiresAt).getTime() - Date.now() > 365 * 864e5) return a;
+  if (new Date(a.licence.expiresAt).getTime() - Date.now() > 365 * 864e5 && a.emailVerified !== false) return a;
   a.licence = { ...a.licence, plan: "yearly", expiresAt: new Date(Date.now() + 3650 * 864e5).toISOString() };
+  a.emailVerified = true;
   await saveAccount(a);
   return a;
+}
+
+// ---------------------------------------------------------------- email links
+/**
+ * Signed, expiring links for email confirmation and password reset:
+ * "<accountId>.<expiry>.<HMAC>". A reset link is tied to the current password
+ * hash, so it stops working once used (or after any password change); a
+ * confirmation link is tied to the email address.
+ */
+export type LinkPurpose = "verify" | "reset";
+const bindTo = (purpose: LinkPurpose, a: Account) => (purpose === "reset" ? a.hash : a.email);
+
+export async function makeLinkToken(purpose: LinkPurpose, a: Account, hours: number) {
+  const exp = Math.floor(Date.now() / 1000 + hours * 3600);
+  return `${a.id}.${exp}.${await hmac(`${purpose}|${a.id}|${exp}|${bindTo(purpose, a)}`)}`;
+}
+
+export async function readLinkToken(purpose: LinkPurpose, token: string): Promise<Account | null> {
+  const [id, exp, sig] = String(token).split(".");
+  if (!id || !exp || !sig || Number(exp) < Date.now() / 1000) return null;
+  const a = await getAccount(id);
+  if (!a) return null;
+  return same(sig, await hmac(`${purpose}|${a.id}|${exp}|${bindTo(purpose, a)}`)) ? a : null;
 }
 
 export async function getAccount(id: string) {
@@ -146,6 +176,8 @@ export async function createAccount(email: string, password: string, name?: stri
     createdAt: now.toISOString(),
     licence: { plan: "trial", expiresAt: new Date(now.getTime() + TRIAL_DAYS * 864e5).toISOString(), devices: [] },
     payments: [],
+    // With email set up, the address must be confirmed before the studio opens.
+    ...((await mailEnabled()) ? { emailVerified: false } : {}),
   };
   await saveAccount(account);
   await writeJson(await emailKey(e), { id: account.id });
@@ -213,6 +245,7 @@ export function publicAccount(a: Account, currentSessionId?: string | null): Pub
     payments: a.payments,
     browsers: (a.sessions ?? []).map((s) => ({ ...s, current: s.id === currentSessionId })),
     maxBrowsers: MAX_BROWSERS,
+    emailVerified: a.emailVerified !== false,
   };
 }
 

@@ -90,6 +90,27 @@ export default function AccountPage() {
           </p>
         )}
 
+        {!account.emailVerified && (
+          <div className="verify-banner" role="status">
+            <p>
+              <b>Confirm your email.</b> We sent a link to {account.email}. Open it to use the studio and the desktop app.
+            </p>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={async () => {
+                try {
+                  await post("/api/auth/verify", { action: "resend" });
+                  setMessage({ kind: "ok", text: `We sent a new link to ${account.email}. Check your spam folder too.` });
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : String(e));
+                }
+              }}
+            >
+              Send the link again
+            </button>
+          </div>
+        )}
+
         <section className="account-card licence-card">
           <div>
             <h2>{PLAN_LABEL[l.plan] ?? l.plan}</h2>

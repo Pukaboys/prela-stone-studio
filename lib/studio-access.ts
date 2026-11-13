@@ -81,6 +81,7 @@ export async function requireStudio(req: Request): Promise<Access | Response> {
   }
   const account = (await desktopSyncAccount(req)) ?? (await currentAccount(req));
   if (!account) return text(401, "Your session has ended. Sign in again.");
+  if (account.emailVerified === false) return text(403, "Confirm your email address first: open the link we sent you.");
   if (!licenceStatus(account).active) return text(402, "Your licence has ended. Renew it on your account page.");
   return { prefix: (await isOwner(account)) ? "" : `accounts/${account.id}/`, account };
 }

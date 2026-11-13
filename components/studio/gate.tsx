@@ -9,7 +9,7 @@
  *              (view only). The licence is checked again every few hours.
  */
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, LockKeyhole } from "lucide-react";
+import { KeyRound, LockKeyhole, Mail } from "lucide-react";
 
 export type DesktopLicence = {
   ok: boolean;
@@ -31,7 +31,7 @@ export type StudioUser =
 
 const RECHECK_MS = 2 * 3600e3;
 
-type Me = { desktop: boolean; account: { email: string; licence: { active: boolean; plan: string; daysLeft: number } } | null };
+type Me = { desktop: boolean; account: { email: string; emailVerified: boolean; licence: { active: boolean; plan: string; daysLeft: number } } | null };
 
 const REASON: Record<string, string> = {
   missing: "Sign in with your Jeo Stone Studio account to activate this computer.",
@@ -112,12 +112,44 @@ function Activate({ licence, onDone }: { licence: DesktopLicence; onDone: (l: De
   );
 }
 
+/** Website: the email address must be confirmed before the studio opens. */
+function Unverified({ email }: { email: string }) {
+  const [note, setNote] = useState("");
+  return (
+    <Shell>
+      <span className="brandmark">
+        <Mail size={22} />
+      </span>
+      <h1>
+        JEO <span>STONE STUDIO</span>
+      </h1>
+      <p>
+        Confirm your email address to open the studio. We sent a link to <b>{email}</b>; open it, then press Continue.
+      </p>
+      <button className="primary" onClick={() => window.location.reload()}>
+        Continue
+      </button>
+      <button
+        onClick={async () => {
+          const r = await fetch("/api/auth/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resend" }) });
+          const json = (await r.json().catch(() => ({}))) as { error?: string };
+          setNote(r.ok ? "Sent. Check your inbox and spam folder." : (json.error ?? "Could not send the email."));
+        }}
+      >
+        Send the link again
+      </button>
+      {note && <p className="hint">{note}</p>}
+    </Shell>
+  );
+}
+
 export default function StudioGate({ children }: { children: (user: StudioUser) => React.ReactNode }) {
   const [state, setState] = useState<
     | { kind: "loading" }
     | { kind: "ready"; user: StudioUser }
     | { kind: "activate"; licence: DesktopLicence }
     | { kind: "expired"; email: string }
+    | { kind: "unverified"; email: string }
   >({ kind: "loading" });
 
   // Desktop: full use, limited mode, or the sign-in screen.
@@ -142,6 +174,10 @@ export default function StudioGate({ children }: { children: (user: StudioUser) 
         }
         if (!me.account) {
           window.location.href = "/login?next=/studio";
+          return;
+        }
+        if (!me.account.emailVerified) {
+          setState({ kind: "unverified", email: me.account.email });
           return;
         }
         const l = me.account.licence;
@@ -187,6 +223,7 @@ export default function StudioGate({ children }: { children: (user: StudioUser) 
   if (state.kind === "loading") return <main className="studio" aria-busy="true" />;
   if (state.kind === "activate")
     return <Activate licence={state.licence} onDone={() => checkDesktop()} />;
+  if (state.kind === "unverified") return <Unverified email={state.email} />;
   if (state.kind === "expired")
     return (
       <Shell>

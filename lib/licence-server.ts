@@ -18,6 +18,7 @@ export async function issueToken(a: Account, deviceId: string, deviceName?: stri
   let device = a.licence.devices.find((d) => d.id === deviceId);
   if (!device) {
     if (!allowNew) throw new LicenceRefused("This computer was removed from your licence. Activate it again.");
+    if (a.emailVerified === false) throw new LicenceRefused("Confirm your email address first: open the link we sent you, then sign in again.");
     if (!status.active) throw new LicenceRefused("Your licence has ended. Renew it on your account page.", 402);
     if (a.licence.devices.length >= status.maxDevices)
       throw new LicenceRefused(

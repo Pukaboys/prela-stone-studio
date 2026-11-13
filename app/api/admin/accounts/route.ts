@@ -1,5 +1,7 @@
 import { applyPayment, currentAccount, getAccount, listAccounts, publicAccount, saveAccount, sameOriginJson, type Account } from "@/lib/accounts";
+import { paymentEmail, siteUrl } from "@/lib/emails";
 import { body, err, ok } from "@/lib/http";
+import { sendMail } from "@/lib/mail";
 import { planById } from "@/lib/plans";
 import { isOwner } from "@/lib/studio-access";
 
@@ -27,7 +29,7 @@ export async function POST(req: Request) {
   if (!sameOriginJson(req)) return err(400, "Bad request.");
   const me = await owner(req);
   if (me instanceof Response) return me;
-  const b = await body<{ accountId: string; action: string; plan: string; amount: string; note: string }>(req);
+  const b = await body<{ accountId: string; action: string; plan: string; amount: string; note: string; notify: boolean }>(req);
   const a = await getAccount(String(b.accountId ?? ""));
   if (!a) return err(404, "No such account.");
 
@@ -38,6 +40,7 @@ export async function POST(req: Request) {
     if (!Number.isFinite(amount) || amount < 0 || amount > 100000) return err(400, "Enter the amount paid.");
     const note = String(b.note ?? "").trim().slice(0, 200) || undefined;
     await applyPayment(a, `MANUAL-${Date.now()}`, plan.id, amount.toFixed(2), note);
+    if (b.notify !== false) void sendMail(paymentEmail(a, amount.toFixed(2), plan.name, `${await siteUrl(req)}/account`));
     return ok({ account: { ...publicAccount(a), createdAt: a.createdAt } });
   }
   if (b.action === "end") {

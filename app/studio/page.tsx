@@ -97,6 +97,34 @@ export default function Studio() {
   return <StudioGate>{(user) => <StudioApp user={user} />}</StudioGate>;
 }
 
+/** Autosave delay after the last change. */
+const AUTOSAVE_MS = 3000;
+const DRAFT = "jeo-studio-draft",
+  LAST_PROJECT = "jeo-studio-last-project";
+// Browser storage can be unavailable (private windows, blocked site data).
+const recall = (k: string) => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const remember = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* storage full or blocked: the server copy still counts */
+  }
+};
+const forget = (k: string) => {
+  try {
+    localStorage.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+};
+const clearDraft = () => forget(DRAFT);
+
 function StudioApp({ user }: { user: StudioUser }) {
   const [pr, setPr] = useState<Project>(defaultProject),
     [sid, setSid] = useState("s1"),
@@ -113,6 +141,13 @@ function StudioApp({ user }: { user: StudioUser }) {
     [showLabels, setShowLabels] = useState(true),
     [assembly3d, setAssembly3d] = useState(true);
   const replacePhoto = useRef(false);
+  // Autosave and the unsaved-changes copy kept on this device.
+  const saving = useRef(false),
+    autosaveFailed = useRef(false),
+    [autoSaving, setAutoSaving] = useState(false),
+    [autoTick, setAutoTick] = useState(0),
+    savedNow = useRef(saved);
+  savedNow.current = saved;
   // Desktop limited mode (licence ended, or offline too long): view only.
   const limited = user.mode === "desktop" && user.limited;
   const blocked = (what: string) => {
@@ -356,7 +391,21 @@ function StudioApp({ user }: { user: StudioUser }) {
   /** Save to this copy's project store; returns the project id, or null on failure. */
   async function save(): Promise<string | null> {
     if (blocked("Saving")) return null;
-    setBusy(true);
+    return persist(false);
+  }
+  /**
+   * Write the project to the store. quiet = autosave: no busy state and no
+   * "saved" toast; a failure is reported once (the draft copy on this device
+   * keeps the changes meanwhile).
+   */
+  async function persist(quiet: boolean): Promise<string | null> {
+    if (saving.current) {
+      if (quiet) return null; // the autosave timer tries again after the running save
+      while (saving.current) await new Promise((r) => setTimeout(r, 100));
+    }
+    saving.current = true;
+    if (quiet) setAutoSaving(true);
+    else setBusy(true);
     try {
       const snapshot = current.current;
       const r = await fetch("/api/projects", {
@@ -367,16 +416,26 @@ function StudioApp({ user }: { user: StudioUser }) {
       if (!r.ok) throw Error(await r.text());
       const { id } = (await r.json()) as { id: string };
       setPr((p) => ({ ...p, id }));
-      setSaved(
-        current.current === snapshot ? "saved" : "dirty",
-      );
-      toast.success("Project saved");
+      const clean = current.current === snapshot;
+      setSaved(clean ? "saved" : "dirty");
+      if (clean) clearDraft();
+      remember(LAST_PROJECT, id);
+      autosaveFailed.current = false;
+      if (!quiet) toast.success("Project saved");
       return id;
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      if (!quiet) toast.error(message);
+      else if (!autosaveFailed.current) {
+        autosaveFailed.current = true;
+        toast.error("Autosave failed", { description: `${message} Your changes are kept on this device; press Save project to try again.` });
+      }
       return null;
     } finally {
-      setBusy(false);
+      saving.current = false;
+      if (quiet) setAutoSaving(false);
+      else setBusy(false);
+      setAutoTick((t) => t + 1);
     }
   }
   async function openProjects() {
@@ -407,6 +466,8 @@ function StudioApp({ user }: { user: StudioUser }) {
       setSid(p.slabs[0].id);
       setSelected(p.pieces[0]?.id || "");
       setSaved("saved");
+      clearDraft();
+      remember(LAST_PROJECT, p.id);
       setDialog("");
     } catch (e) {
       toast.error(String(e));
@@ -795,6 +856,59 @@ function StudioApp({ user }: { user: StudioUser }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // Autosave: a few seconds after the last change (not in limited mode).
+  useEffect(() => {
+    if (saved !== "dirty" || limited) return;
+    const t = setTimeout(() => void persist(true), AUTOSAVE_MS);
+    return () => clearTimeout(t);
+  }, [pr, saved, limited, autoTick]);
+  // Keep a copy of unsaved changes on this device (crash, closed window, lost connection).
+  useEffect(() => {
+    if (saved !== "dirty") return;
+    const t = setTimeout(() => remember(DRAFT, JSON.stringify({ at: new Date().toISOString(), project: pr })), 600);
+    return () => clearTimeout(t);
+  }, [pr, saved]);
+  // On start: offer unsaved changes from last time, otherwise reopen the last project.
+  useEffect(() => {
+    let draft: { at: string; project: Project } | null = null;
+    try {
+      draft = JSON.parse(recall(DRAFT) ?? "null");
+    } catch {
+      draft = null;
+    }
+    if (draft && validProject(draft.project)) {
+      const d = draft;
+      toast("Unsaved changes found", {
+        description: `“${d.project.name}” from ${new Date(d.at).toLocaleString()} was not saved.`,
+        duration: Infinity,
+        action: {
+          label: "Restore",
+          onClick: () => {
+            setPr(d.project);
+            setSid(d.project.slabs[0].id);
+            setSelected(d.project.pieces[0]?.id || "");
+            setSaved("dirty");
+          },
+        },
+        cancel: { label: "Discard", onClick: () => clearDraft() },
+      });
+      return;
+    }
+    const last = recall(LAST_PROJECT);
+    if (!last) return;
+    fetch("/api/projects?id=" + encodeURIComponent(last))
+      .then(async (r) => {
+        if (!r.ok) throw Error();
+        const p = await r.json();
+        if (!validProject(p)) throw Error();
+        if (savedNow.current !== "new") return; // something was changed meanwhile
+        setPr(p);
+        setSid(p.slabs[0].id);
+        setSelected(p.pieces[0]?.id || "");
+        setSaved("saved");
+      })
+      .catch(() => forget(LAST_PROJECT));
+  }, []);
   useEffect(() => {
     if (saved !== "dirty") return;
     const warn = (e: BeforeUnloadEvent) => {
@@ -860,7 +974,7 @@ function StudioApp({ user }: { user: StudioUser }) {
             onChange={(e) => change((p) => ({ ...p, name: e.target.value.slice(0, 150) }))}
           />
           <span className={"save-status " + saved} role="status">
-            {saveLabels[saved]}
+            {autoSaving ? "Saving…" : saveLabels[saved]}
           </span>
           <button className="quiet" onClick={() => setDialog("help")}>
             How it works <ArrowUpRight size={16} />

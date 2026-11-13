@@ -92,12 +92,43 @@ Environment variables on the host (Hostinger: website → Environment variables)
 | LICENSE_PRIVATE_KEY | Contents of release/LICENSE_PRIVATE_KEY.txt. Required. Keep it secret, never commit it. |
 | ADMIN_EMAIL | Your own account: opens /admin, and sees the projects made before accounts existed |
 | SESSION_SECRET | Optional; otherwise generated once and stored in the data folder |
+| SITE_URL | The website address used in email links, e.g. `https://jeostonestudio.com` (set it once email is on) |
+| SMTP_HOST, SMTP_PORT | Hostinger: `smtp.hostinger.com`, `465` |
+| SMTP_USER, SMTP_PASS | The mailbox that sends, e.g. `info@your-domain.com`, and its password |
+| SMTP_SECURE | Optional: `ssl` (default on 465) or `starttls` (587) |
+| MAIL_FROM | Optional sender name, e.g. `Jeo Stone Studio <info@your-domain.com>` |
+| CRON_SECRET | Optional, 16+ characters: lets a cron job call `/api/cron/reminders?key=…` |
 
 The public half of the licence key is built into the app
 (lib/licence-public-key.ts). If the private key is ever lost or leaked,
 generate a new pair; existing desktop activations will then need to sign in
 again. The website address the desktop app talks to is "licenseServer" in
 desktop/app/package.json.
+
+### Email
+
+With the SMTP settings above, the website sends:
+
+- a confirmation link at sign-up (the studio and desktop activation open once
+  the address is confirmed; accounts made before email was set up count as
+  confirmed),
+- "Forgot password?" reset links (1 hour, single use; signs out every browser),
+- reminders 7 days and 1 day before a licence ends, and when it has ended
+  (once each per end date; checked hourly while the site has visitors, or by
+  a cron job calling `/api/cron/reminders?key=CRON_SECRET`),
+- "Payment received" when you add a plan on /admin, and a note to ADMIN_EMAIL
+  for every new trial.
+
+Without SMTP settings none of this is sent and sign-up works without
+confirmation. The password is only read from the environment, never stored
+in the code.
+
+### Saving
+
+The studio saves by itself about 3 seconds after the last change (not in
+limited mode), keeps a copy of unsaved changes in the browser / app so a crash
+or a lost connection loses nothing ("Unsaved changes found → Restore" on the
+next start), and reopens the last project on start.
 
 ## Desktop ↔ website sync
 

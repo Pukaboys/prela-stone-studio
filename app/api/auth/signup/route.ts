@@ -1,4 +1,7 @@
-import { AccountError, clientIp, createAccount, fail, limited, passwordProblem, publicAccount, sameOriginJson, startSession, validEmail } from "@/lib/accounts";
+import { AccountError, clientIp, createAccount, fail, limited, makeLinkToken, passwordProblem, publicAccount, sameOriginJson, startSession, validEmail } from "@/lib/accounts";
+import { ownerNewAccountEmail, siteUrl, verifyEmail } from "@/lib/emails";
+import { sendMail } from "@/lib/mail";
+import { getSetting } from "@/lib/storage";
 import { body, err, ok } from "@/lib/http";
 import { isDesktop } from "@/lib/studio-access";
 
@@ -16,7 +19,13 @@ export async function POST(req: Request) {
   try {
     const a = await createAccount(email, password, typeof b.name === "string" ? b.name : undefined);
     fail(ip); // count successful sign-ups too (max 5 per 15 minutes per address)
-    return ok({ account: publicAccount(a) }, { "Set-Cookie": await startSession(req, a) });
+    const cookie = await startSession(req, a);
+    const site = await siteUrl(req);
+    if (a.emailVerified === false)
+      void sendMail(verifyEmail(a, `${site}/verify?token=${encodeURIComponent(await makeLinkToken("verify", a, 72))}`));
+    const owner = (await getSetting("ADMIN_EMAIL"))?.trim().toLowerCase();
+    if (owner && owner !== a.email) void sendMail(ownerNewAccountEmail(owner, a, `${site}/admin`));
+    return ok({ account: publicAccount(a) }, { "Set-Cookie": cookie });
   } catch (e) {
     if (e instanceof AccountError) return err(409, e.message);
     console.error(e);

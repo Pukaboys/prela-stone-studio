@@ -1,5 +1,6 @@
 "use client";
 /** Sign in, or create an account (starts the free trial). */
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import "../site.css";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
@@ -16,6 +17,7 @@ export default function Login() {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mail, setMail] = useState(false);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -26,8 +28,11 @@ export default function Login() {
       if (q.get("signedout")) setError("This browser was signed out from another browser or by a password change. Sign in again.");
     });
     fetch("/api/auth/me", { cache: "no-store" })
-      .then((r) => r.json() as Promise<{ account: unknown }>)
-      .then((me) => me.account && window.location.replace(safeNext(q.get("next"))))
+      .then((r) => r.json() as Promise<{ account: unknown; mail?: boolean }>)
+      .then((me) => {
+        setMail(!!me.mail);
+        if (me.account) window.location.replace(safeNext(q.get("next")));
+      })
       .catch(() => undefined);
   }, []);
 
@@ -93,6 +98,11 @@ export default function Login() {
               required
             />
             {mode === "signup" && <small>At least 10 characters, with letters and a number.</small>}
+            {mode === "signin" && mail && (
+              <Link className="auth-forgot" href="/reset" prefetch={false}>
+                Forgot password?
+              </Link>
+            )}
           </label>
           {error && (
             <p className="auth-error" role="alert">
