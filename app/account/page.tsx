@@ -28,19 +28,23 @@ const contactLinks = (subject: string) =>
 export default function AccountPage() {
   const [account, setAccount] = useState<PublicAccount | null>(null);
   const [owner, setOwner] = useState(false);
+  const [ownerPending, setOwnerPending] = useState(false);
+  const [mail, setMail] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [pw, setPw] = useState({ current: "", next: "" });
 
   useEffect(() => {
     fetch("/api/auth/me", { cache: "no-store" })
-      .then((r) => r.json() as Promise<{ account: PublicAccount | null; desktop: boolean; owner?: boolean }>)
+      .then((r) => r.json() as Promise<{ account: PublicAccount | null; desktop: boolean; owner?: boolean; ownerPending?: boolean; mail?: boolean }>)
       .then((me) => {
         if (me.desktop) window.location.replace("/studio");
         else if (!me.account) window.location.replace("/login?next=/account");
         else {
           setAccount(me.account);
           setOwner(!!me.owner);
+          setOwnerPending(!!me.ownerPending);
+          setMail(!!me.mail);
         }
       });
     fetch("/api/app-version")
@@ -87,6 +91,32 @@ export default function AccountPage() {
           <p className={"account-message " + message.kind} role={message.kind === "error" ? "alert" : "status"}>
             {message.text}
           </p>
+        )}
+
+        {ownerPending && (
+          <div className="verify-banner" role="status">
+            <p>
+              <b>Owner account.</b>{" "}
+              {mail
+                ? "To open the admin page, prove this is your mailbox: we send a confirmation link to it."
+                : `Email is not set up yet. To open the admin page, set ADMIN_ACCOUNT_ID = ${account.id} in the website settings (Hostinger → Environment variables).`}
+            </p>
+            {mail && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={async () => {
+                  try {
+                    await post("/api/auth/verify", { action: "resend" });
+                    setMessage({ kind: "ok", text: `We sent a confirmation link to ${account.email}.` });
+                  } catch (e) {
+                    onError(e instanceof Error ? e.message : String(e));
+                  }
+                }}
+              >
+                Send the link
+              </button>
+            )}
+          </div>
         )}
 
         {!account.emailVerified && (

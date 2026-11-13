@@ -18,7 +18,7 @@ import { getSetting, getStore } from "@/lib/storage";
 
 export type Device = { id: string; name: string; activatedAt: string; lastSeen: string };
 /** A signed-in browser. */
-export type WebSession = { id: string; name: string; createdAt: string; lastSeen: string };
+export type WebSession = { id: string; name: string; createdAt: string; lastSeen: string; /** Admin two-step code entered (owner). */ mfaAt?: string };
 export type Payment = { orderId: string; plan: PlanId; amount: string; currency: string; at: string; note?: string };
 export type Account = {
   id: string;
@@ -37,6 +37,10 @@ export type Account = {
   emailVerified?: boolean;
   /** Reminder emails already sent, keyed "<expiresAt>:<kind>" (a renewal starts fresh). */
   reminders?: Record<string, string>;
+  /** Two-step login for the admin page (authenticator app). */
+  totp?: { secret: string; enabledAt: string; lastStep: number; recovery: string[] };
+  /** Key shown during setup, until the first code confirms it. */
+  totpPending?: { secret: string; at: string };
 };
 export type PublicAccount = {
   id: string;
@@ -115,13 +119,30 @@ async function readJson<T>(key: string): Promise<T | null> {
 }
 const writeJson = async (key: string, value: unknown) => (await getStore()).put(key, JSON.stringify(value), "application/json");
 
-/** The owner (ADMIN_EMAIL) never runs out: their licence is kept 10 years ahead. */
+/**
+ * Is this account the site owner (admin page, the projects saved before
+ * accounts existed, a licence that never runs out)?
+ *
+ * - ADMIN_ACCOUNT_ID set: exactly that account (works without email).
+ * - Otherwise ADMIN_EMAIL, but only once that address was proven by a link
+ *   sent to it (confirmation or password reset). Signing up with the owner's
+ *   email is not enough, so nobody can claim the admin by registering first.
+ *
+ * "pending": the email matches but has not been proven yet.
+ */
+export async function ownerStatus(a: Account): Promise<"owner" | "pending" | "no"> {
+  const id = (await getSetting("ADMIN_ACCOUNT_ID"))?.trim();
+  if (id) return a.id === id ? "owner" : "no";
+  const email = (await getSetting("ADMIN_EMAIL"))?.trim().toLowerCase();
+  if (!email || email !== a.email) return "no";
+  return a.emailVerified === true ? "owner" : "pending";
+}
+
+/** The owner never runs out: their licence is kept 10 years ahead. */
 async function keepOwnerLicence(a: Account) {
-  const admin = (await getSetting("ADMIN_EMAIL"))?.trim().toLowerCase();
-  if (!admin || admin !== a.email) return a;
-  if (new Date(a.licence.expiresAt).getTime() - Date.now() > 365 * 864e5 && a.emailVerified !== false) return a;
+  if (new Date(a.licence.expiresAt).getTime() - Date.now() > 365 * 864e5) return a;
+  if ((await ownerStatus(a)) !== "owner") return a;
   a.licence = { ...a.licence, plan: "yearly", expiresAt: new Date(Date.now() + 3650 * 864e5).toISOString() };
-  a.emailVerified = true;
   await saveAccount(a);
   return a;
 }
@@ -243,7 +264,7 @@ export function publicAccount(a: Account, currentSessionId?: string | null): Pub
     licence: licenceStatus(a),
     devices: a.licence.devices,
     payments: a.payments,
-    browsers: (a.sessions ?? []).map((s) => ({ ...s, current: s.id === currentSessionId })),
+    browsers: (a.sessions ?? []).map(({ id, name, createdAt, lastSeen }) => ({ id, name, createdAt, lastSeen, current: id === currentSessionId })),
     maxBrowsers: MAX_BROWSERS,
     emailVerified: a.emailVerified !== false,
   };

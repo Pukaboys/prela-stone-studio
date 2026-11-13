@@ -1,4 +1,4 @@
-import { clientIp, currentSession, fail, limited, makeLinkToken, readLinkToken, saveAccount, sameOriginJson } from "@/lib/accounts";
+import { clientIp, currentSession, fail, limited, makeLinkToken, ownerStatus, readLinkToken, saveAccount, sameOriginJson } from "@/lib/accounts";
 import { siteUrl, verifyEmail } from "@/lib/emails";
 import { body, err, ok } from "@/lib/http";
 import { mailEnabled, sendMail } from "@/lib/mail";
@@ -16,7 +16,8 @@ export async function POST(req: Request) {
     const s = await currentSession(req);
     if (!s) return err(401, "Sign in first.");
     const a = s.account;
-    if (a.emailVerified !== false) return ok({ verified: true });
+    // Unconfirmed accounts, and the owner proving ADMIN_EMAIL for the admin page.
+    if (a.emailVerified !== false && (await ownerStatus(a)) !== "pending") return ok({ verified: true });
     const key = "verify-resend:" + a.id;
     if (limited(key, 3)) return err(429, "We already sent a few emails. Check your spam folder, or wait 15 minutes.");
     if (!(await mailEnabled())) return err(503, "Email is not set up on this site.");
@@ -33,8 +34,8 @@ export async function POST(req: Request) {
     fail(ip);
     return err(400, "This confirmation link is no longer valid. Sign in and ask for a new one.");
   }
-  if (a.emailVerified === false) {
-    a.emailVerified = true;
+  if (a.emailVerified !== true) {
+    a.emailVerified = true; // proven by the link
     await saveAccount(a);
   }
   return ok({ verified: true, email: a.email });

@@ -90,7 +90,8 @@ Environment variables on the host (Hostinger: website → Environment variables)
 | Name | Value |
 | --- | --- |
 | LICENSE_PRIVATE_KEY | Contents of release/LICENSE_PRIVATE_KEY.txt. Required. Keep it secret, never commit it. |
-| ADMIN_EMAIL | Your own account: opens /admin, and sees the projects made before accounts existed |
+| ADMIN_EMAIL | Your own account: opens /admin, and sees the projects made before accounts existed. Counts only after the address is proven by its confirmation (or reset) link, so nobody can claim it by signing up first |
+| ADMIN_ACCOUNT_ID | Optional: your account's ID instead (shown on My account). Needed while email is not set up |
 | SESSION_SECRET | Optional; otherwise generated once and stored in the data folder |
 | SITE_URL | The website address used in email links, e.g. `https://jeostonestudio.com` (set it once email is on) |
 | SMTP_HOST, SMTP_PORT | Hostinger: `smtp.hostinger.com`, `465` |
@@ -122,6 +123,17 @@ With the SMTP settings above, the website sends:
 Without SMTP settings none of this is sent and sign-up works without
 confirmation. The password is only read from the environment, never stored
 in the code.
+
+### Admin page security
+
+/admin needs the owner account (above), signed in, plus two-step login: on the
+first visit you scan a QR code with an authenticator app (Google/Microsoft
+Authenticator, 1Password…) and get 10 one-time recovery codes. Each browser
+asks for a fresh code every 12 hours; 5 wrong codes block for 15 minutes.
+Every admin action and two-step login is in the Activity list (time, IP,
+before/after), stored per month in the data folder under audit/. Lost phone
+and no recovery codes: delete the "totp" entry from your account file in the
+data folder (accounts/<id>/account.json) and set it up again.
 
 ### Saving
 

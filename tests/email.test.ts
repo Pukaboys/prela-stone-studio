@@ -80,6 +80,8 @@ const verify = await import("@/app/api/auth/verify/route");
 const activate = await import("@/app/api/licence/activate/route");
 const projects = await import("@/app/api/projects/route");
 const admin = await import("@/app/api/admin/accounts/route");
+const twoStep = await import("@/app/api/admin/2fa/route");
+const { setUpTwoStep } = await import("./admin-helper");
 const accounts = await import("@/lib/accounts");
 const { sendDueReminders } = await import("@/lib/reminders");
 const { buildMessage } = await import("@/lib/mail");
@@ -195,6 +197,11 @@ describe("licence emails", () => {
   });
   it("thanks the customer when the owner adds a paid plan", async () => {
     const owner = cookieOf(await signup.POST(req("auth/signup", { body: { email: "owner@example.com", password: "owner-pass-2026" } })));
+    // Prove ADMIN_EMAIL with the confirmation link, then turn on two-step login.
+    expect((await admin.GET(req("admin/accounts", { cookie: owner }))).status).toBe(403);
+    const confirm = inbox.filter((m) => m.to === "owner@example.com").find((m) => subjectOf(m).includes("Confirm"))!;
+    expect((await verify.POST(req("auth/verify", { body: { token: tokenIn(confirm) } }))).status).toBe(200);
+    await setUpTwoStep((body) => twoStep.POST(req("admin/2fa", { body, cookie: owner })));
     const rita = (await accounts.findByEmail("rita@example.com"))!;
     const before = inbox.filter((m) => m.to === "rita@example.com").length;
     const r = await admin.POST(req("admin/accounts", { body: { accountId: rita.id, action: "grant", plan: "yearly", amount: "199" }, cookie: owner }));

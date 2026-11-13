@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   if (problem) return err(400, problem);
   await setPassword(a, String(b.password));
   // Getting the link proves the address works.
-  if (a.emailVerified === false) {
+  if (a.emailVerified !== true) {
     a.emailVerified = true;
     await saveAccount(a);
   }

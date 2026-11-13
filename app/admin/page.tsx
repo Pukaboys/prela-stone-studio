@@ -2,17 +2,22 @@
 /** Owner page: customers, and switching on a plan after a customer pays. */
 import { useEffect, useMemo, useState } from "react";
 import "../site.css";
+import { TwoStepCode, TwoStepSetup } from "@/components/site/admin-2fa";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import type { PublicAccount } from "@/lib/accounts";
 import { PLANS } from "@/lib/plans";
 
 type Row = PublicAccount & { createdAt: string };
+type Activity = { at: string; action: string; by: string; ip: string; target?: string; detail?: string };
+const fmtTime = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 const PLAN_LABEL: Record<string, string> = { trial: "Trial", monthly: "Monthly", yearly: "Yearly" };
 
 async function post(data: unknown) {
   const r = await fetch("/api/admin/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
   const json = (await r.json().catch(() => ({}))) as { account?: Row; error?: string };
+  if (r.status === 428) window.location.reload(); // two-step code expired: ask again
   if (!r.ok || !json.account) throw new Error(json.error ?? `Request failed (${r.status}).`);
   return json.account;
 }
@@ -110,18 +115,27 @@ function Customer({ row, onChange, onError }: { row: Row; onChange: (r: Row) => 
 }
 
 export default function Admin() {
+  const [state, setState] = useState<"loading" | "setup" | "code" | "ready" | "replace">("loading");
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [activity, setActivity] = useState<Activity[]>([]);
+  const [recoveryLeft, setRecoveryLeft] = useState(0);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
+  const [tick, setTick] = useState(0);
+  const reload = () => setTick((t) => t + 1);
 
   useEffect(() => {
     fetch("/api/admin/accounts", { cache: "no-store" }).then(async (r) => {
       if (r.status === 401) return window.location.replace("/login?next=/admin");
-      const json = (await r.json()) as { accounts?: Row[]; error?: string };
-      if (!r.ok) setError(json.error ?? "Not allowed.");
-      else setRows(json.accounts ?? []);
+      const json = (await r.json()) as { accounts?: Row[]; activity?: Activity[]; recoveryLeft?: number; error?: string; need?: "setup" | "code" };
+      if (r.status === 428) return setState(json.need === "setup" ? "setup" : "code");
+      if (!r.ok) return setError(json.error ?? "Not allowed.");
+      setRows(json.accounts ?? []);
+      setActivity(json.activity ?? []);
+      setRecoveryLeft(json.recoveryLeft ?? 0);
+      setState("ready");
     });
-  }, []);
+  }, [tick]);
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -138,7 +152,7 @@ export default function Admin() {
           <div>
             <p className="eyebrow">Owner</p>
             <h1>Customers</h1>
-            {rows && (
+            {rows && state === "ready" && (
               <p className="muted">
                 {rows.length} accounts · {paying} paying · {trials} on trial
               </p>
@@ -155,23 +169,73 @@ export default function Admin() {
             {error}
           </p>
         )}
-        {rows && (
-          <section className="account-card">
-            <label className="auth-field">
-              <span>Search by email or name</span>
-              <input value={q} onChange={(e) => setQ(e.target.value)} type="search" />
-            </label>
-            <p className="muted">When a customer has paid, choose the plan and the amount they paid and press Add plan. Paying again extends from the current end date.</p>
-            {shown.length === 0 ? (
-              <p className="muted">No accounts{q ? " match" : " yet"}.</p>
-            ) : (
-              <ul className="admin-list">
-                {shown.map((r) => (
-                  <Customer key={r.id} row={r} onError={setError} onChange={(n) => setRows((all) => (all ?? []).map((x) => (x.id === n.id ? n : x)))} />
-                ))}
-              </ul>
+        {state === "setup" && <TwoStepSetup onDone={reload} />}
+        {state === "code" && <TwoStepCode onDone={reload} />}
+        {state === "replace" && <TwoStepSetup replacing onDone={reload} />}
+        {state === "ready" && rows && (
+          <>
+            {recoveryLeft <= 3 && (
+              <p className="account-message error" role="alert">
+                Only {recoveryLeft} recovery code{recoveryLeft === 1 ? "" : "s"} left. Set up the authenticator again (below) to get new ones.
+              </p>
             )}
-          </section>
+            <section className="account-card">
+              <label className="auth-field">
+                <span>Search by email or name</span>
+                <input value={q} onChange={(e) => setQ(e.target.value)} type="search" />
+              </label>
+              <p className="muted">When a customer has paid, choose the plan and the amount they paid and press Add plan. Paying again extends from the current end date.</p>
+              {shown.length === 0 ? (
+                <p className="muted">No accounts{q ? " match" : " yet"}.</p>
+              ) : (
+                <ul className="admin-list">
+                  {shown.map((r) => (
+                    <Customer
+                      key={r.id}
+                      row={r}
+                      onError={setError}
+                      onChange={(n) => {
+                        setRows((all) => (all ?? []).map((x) => (x.id === n.id ? n : x)));
+                        reload(); // refresh the activity log
+                      }}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section className="account-card">
+              <h2>Activity</h2>
+              <p className="muted">Every admin action and two-step login, with time and IP address (this month and last month).</p>
+              {activity.length === 0 ? (
+                <p className="muted">Nothing yet.</p>
+              ) : (
+                <ul className="activity-list">
+                  {activity.map((e, i) => (
+                    <li key={e.at + i}>
+                      <time>{fmtTime(e.at)}</time>
+                      <span>
+                        <b>{e.action}</b>
+                        {e.target && <> · {e.target}</>}
+                        {e.detail && <small>{e.detail}</small>}
+                      </span>
+                      <small className="activity-who">
+                        {e.by} · {e.ip}
+                      </small>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section className="account-card">
+              <h2>Two-step login</h2>
+              <p className="muted">
+                On · {recoveryLeft} recovery code{recoveryLeft === 1 ? "" : "s"} left. This browser asks for a new code every 12 hours.
+              </p>
+              <button className="btn btn-ghost" onClick={() => setState("replace")}>
+                Set up a new phone / new recovery codes
+              </button>
+            </section>
+          </>
         )}
       </main>
       <SiteFooter />

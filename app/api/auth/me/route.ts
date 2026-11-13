@@ -1,4 +1,4 @@
-import { currentSession, publicAccount } from "@/lib/accounts";
+import { currentSession, ownerStatus, publicAccount } from "@/lib/accounts";
 import { siteUrl } from "@/lib/emails";
 import { ok } from "@/lib/http";
 import { mailEnabled } from "@/lib/mail";
@@ -15,6 +15,8 @@ export async function GET(req: Request) {
     desktop: false,
     account: s ? publicAccount(s.account, s.sessionId) : null,
     owner: s ? await isOwner(s.account) : false,
+    // ADMIN_EMAIL matches but is not proven yet (confirm it to open the admin page).
+    ownerPending: s ? (await ownerStatus(s.account)) === "pending" : false,
     mail: await mailEnabled(),
   });
 }

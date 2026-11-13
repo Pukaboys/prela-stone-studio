@@ -23,6 +23,9 @@ const projects = await import("@/app/api/projects/route");
 const logout = await import("@/app/api/auth/logout/route");
 const browsers = await import("@/app/api/account/browsers/route");
 const admin = await import("@/app/api/admin/accounts/route");
+const twoStep = await import("@/app/api/admin/2fa/route");
+const { setUpTwoStep, unlockWith } = await import("./admin-helper");
+let ownerRecovery: string[] = [];
 const accounts = await import("@/lib/accounts");
 const { checkLicence, verifyLicence } = await import("@/lib/licence-token");
 const { defaultProject } = await import("@/lib/model");
@@ -181,6 +184,16 @@ describe("owner switches on paid plans", () => {
   });
   it("adding a yearly plan turns the trial into a year; adding again extends it", async () => {
     const owner = await newUser("owner@example.com");
+    const tf = (body: unknown) => twoStep.POST(req("admin/2fa", { body, cookie: owner }));
+    // Signing up with ADMIN_EMAIL is not enough: the address must be proven (or ADMIN_ACCOUNT_ID set).
+    expect((await admin.GET(req("admin/accounts", { cookie: owner }))).status).toBe(403);
+    process.env.ADMIN_ACCOUNT_ID = (await accounts.findByEmail("owner@example.com"))!.id;
+    // Owner, but two-step login is required first.
+    const need = await admin.GET(req("admin/accounts", { cookie: owner }));
+    expect(need.status).toBe(428);
+    expect(((await need.json()) as { need: string }).need).toBe("setup");
+    ownerRecovery = (await setUpTwoStep(tf)).recovery;
+    expect(ownerRecovery).toHaveLength(10);
     const me = ((await (await admin.GET(req("admin/accounts", { cookie: owner }))).json()) as { accounts: Row[] }).accounts.find((r) => r.email === "owner@example.com")!;
     expect(me.licence.daysLeft).toBeGreaterThan(3000); // the owner never runs out
     const list = ((await (await admin.GET(req("admin/accounts", { cookie: owner }))).json()) as { accounts: Row[] }).accounts;
@@ -193,9 +206,18 @@ describe("owner switches on paid plans", () => {
     expect(row.payments[0].note).toBe("Bank ref 42");
     const again = ((await (await grant(owner, mia.id, { plan: "monthly", amount: "19" })).json()) as { account: Row }).account;
     expect(again.licence.daysLeft).toBe(365 + 31);
+    // Both payments are in the activity log, newest first.
+    const log = ((await (await admin.GET(req("admin/accounts", { cookie: owner }))).json()) as { activity: { action: string; target?: string; detail?: string }[] }).activity;
+    expect(log[0]).toMatchObject({ action: "Added Monthly plan", target: "mia@example.com" });
+    expect(log[1]).toMatchObject({ action: "Added Yearly plan", target: "mia@example.com" });
+    expect(log[1].detail).toMatch(/€199\.00 .*Bank ref 42/);
+    expect(log.some((e) => e.action === "Two-step login set up")).toBe(true);
   });
   it("can end a licence, and rejects bad input", async () => {
     const owner = (await login.POST(req("auth/login", { body: { email: "owner@example.com", password: "slab-planner-2026" }, ip: ip() }))).headers.get("set-cookie")!.split(";")[0];
+    // A new browser needs a code before the admin opens.
+    expect((await admin.GET(req("admin/accounts", { cookie: owner }))).status).toBe(428);
+    await unlockWith((body) => twoStep.POST(req("admin/2fa", { body, cookie: owner })), ownerRecovery);
     const mia = (await accounts.findByEmail("mia@example.com"))!;
     expect((await grant(owner, mia.id, { plan: "lifetime-free" })).status).toBe(400);
     expect((await grant(owner, mia.id, { amount: "-5" })).status).toBe(400);
@@ -284,6 +306,7 @@ describe("browser limit (online studio)", () => {
     owner.sessions = [];
     await accounts.saveAccount(owner);
     const oc = cookieOf(await signIn("owner@example.com"));
+    await unlockWith((body) => twoStep.POST(req("admin/2fa", { body, cookie: oc })), ownerRecovery);
     const nora = (await accounts.findByEmail("nora@example.com"))!;
     await admin.POST(req("admin/accounts", { body: { accountId: nora.id, action: "signout" }, cookie: oc }));
     expect((await accounts.findByEmail("nora@example.com"))!.sessions).toEqual([]);

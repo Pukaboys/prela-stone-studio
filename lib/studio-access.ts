@@ -9,9 +9,9 @@
  *              ended or the app was offline too long, it runs in limited
  *              mode: projects can be opened (GET) but not changed.
  */
-import { currentAccount, getAccount, licenceStatus, type Account } from "@/lib/accounts";
+import { currentAccount, getAccount, licenceStatus, ownerStatus, type Account } from "@/lib/accounts";
 import { OFFLINE_GRACE_DAYS, checkLicence, verifyLicence, type LicenceCheck } from "@/lib/licence-token";
-import { getSetting, getStore } from "@/lib/storage";
+import { getStore } from "@/lib/storage";
 
 export const isDesktop = () => typeof process !== "undefined" && process.env.JEO_DESKTOP === "1";
 
@@ -51,9 +51,9 @@ export type Access = { prefix: string; account: Account | null };
 const text = (status: number, message: string) =>
   new Response(message, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 
+/** The site owner (see ownerStatus: proven ADMIN_EMAIL, or ADMIN_ACCOUNT_ID). */
 export async function isOwner(a: Account) {
-  const admin = await getSetting("ADMIN_EMAIL");
-  return !!admin && admin.trim().toLowerCase() === a.email;
+  return (await ownerStatus(a)) === "owner";
 }
 
 /**
