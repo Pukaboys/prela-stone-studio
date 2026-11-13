@@ -964,6 +964,41 @@ function StudioApp({ user }: { user: StudioUser }) {
             onChange={(e) => upload(e.target.files?.[0])}
           />
           <p className="hint">Straight-on photo, cropped to the slab edges.</p>
+          <div className="statsbar side-stats" aria-label="Selected slab">
+            <div>
+              <small>Slab area</small>
+              <b>
+                {((slab.w * slab.h) / 1e6).toFixed(2)} <em>m²</em>
+              </b>
+            </div>
+            <div>
+              <small>Allocated area</small>
+              <b>
+                {((used * slab.w * slab.h) / 1e8).toFixed(2)} <em>m²</em>
+              </b>
+            </div>
+            <div className="util">
+              <small>
+                Slab utilization <b>{used.toFixed(1)}%</b>
+              </small>
+              <div>
+                <span style={{ width: Math.min(used, 100) + "%" }} />
+              </div>
+            </div>
+            <button
+              className={"checkstatus " + (warnings.length ? "warn" : "")}
+              onClick={() => setDialog("checks")}
+            >
+              {warnings.length ? (
+                <TriangleAlert size={18} />
+              ) : (
+                <Check size={18} />
+              )}{" "}
+              {warnings.length
+                ? `${warnings.length} issue${warnings.length > 1 ? "s" : ""} to check`
+                : "Placement checks passed"}
+            </button>
+          </div>
           <div className="panelhead pieceheading">
             <h2>Pieces</h2>
             <button aria-label="Add piece" title="Add piece" onClick={addPiece}>
@@ -1362,41 +1397,6 @@ function StudioApp({ user }: { user: StudioUser }) {
                 />
               </section>
             )}
-          </div>
-          <div className="statsbar">
-            <div>
-              <small>Slab area</small>
-              <b>
-                {((slab.w * slab.h) / 1e6).toFixed(2)} <em>m²</em>
-              </b>
-            </div>
-            <div>
-              <small>Allocated area</small>
-              <b>
-                {((used * slab.w * slab.h) / 1e8).toFixed(2)} <em>m²</em>
-              </b>
-            </div>
-            <div className="util">
-              <small>
-                Slab utilization <b>{used.toFixed(1)}%</b>
-              </small>
-              <div>
-                <span style={{ width: Math.min(used, 100) + "%" }} />
-              </div>
-            </div>
-            <button
-              className={"checkstatus " + (warnings.length ? "warn" : "")}
-              onClick={() => setDialog("checks")}
-            >
-              {warnings.length ? (
-                <TriangleAlert size={18} />
-              ) : (
-                <Check size={18} />
-              )}{" "}
-              {warnings.length
-                ? `${warnings.length} issue${warnings.length > 1 ? "s" : ""} to check`
-                : "Placement checks passed"}
-            </button>
           </div>
           <p className="workspace-note">
             {slab.image === "/demo-slab.png"

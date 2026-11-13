@@ -204,21 +204,13 @@ export default function Assembly3D({
         const currentSize = currentBounds.isEmpty()
           ? size
           : currentBounds.getSize(new THREE.Vector3());
-        const span = Math.max(
-          currentSize.x,
-          currentSize.y,
-          currentSize.z,
-          1000,
-        );
-        const distance =
-          ((span / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))) *
-            1.35) /
-          Math.min(camera.aspect, 1);
-        camera.position.set(
-          currentCenter.x + distance * 0.6,
-          currentCenter.y + distance * 0.85,
-          currentCenter.z + distance * 0.8,
-        );
+        // Frame the pieces' bounding sphere so they fill the view (both directions).
+        const radius = Math.max(currentSize.length() / 2, 400);
+        const vFov = THREE.MathUtils.degToRad(camera.fov);
+        const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+        const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.05;
+        const direction = new THREE.Vector3(0.6, 0.85, 0.8).normalize();
+        camera.position.copy(currentCenter).addScaledVector(direction, distance);
         controls.target.copy(currentCenter);
         controls.update();
       }

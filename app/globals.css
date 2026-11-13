@@ -635,3 +635,31 @@ kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;min-width:22px;tex
   .workspace>.canvases{padding-top:12px;padding-bottom:12px}
   .assembly-pad{padding:8px 12px 10px;gap:8px}
 }
+
+/* Slab figures live in the left panel (under the pieces list). */
+.leftpanel .side-stats{margin:14px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:12px 10px;padding:14px;align-items:start}
+.leftpanel .side-stats b{font-size:17px;white-space:nowrap}
+.leftpanel .side-stats small{white-space:nowrap}
+.leftpanel .side-stats .util,.leftpanel .side-stats .checkstatus{grid-column:1/-1;min-width:0;max-width:none}
+.leftpanel .side-stats .checkstatus{justify-content:flex-start;text-align:left;gap:8px}
+.leftpanel .sidebarfoot{padding-top:22px}
+
+@media(min-width:951px){
+  /* 2D assembly board fills the panel like the slab board. */
+  .canvaspanel>.assembly-2d:not([hidden]){flex:1 1 0;min-height:160px;display:flex;flex-direction:column}
+  .assembly-2d>.board-scroll{flex:1 1 0;min-height:0;height:auto!important;container-type:size}
+  .assembly-2d>.board-scroll .assembly-svg{height:100cqh}
+}
+/* Assembly tab on wide screens: move controls beside the preview, so the
+   3D / 2D figure gets the full height. */
+@media(min-width:1100px){
+  .workspace>.canvases.assembly>.assemblypanel{display:grid;grid-template-columns:minmax(0,1fr) 270px;grid-template-rows:auto minmax(0,1fr) auto}
+  .canvases.assembly>.assemblypanel>.canvashead{grid-column:1/-1}
+  .canvases.assembly>.assemblypanel>.assembly-3d,.canvases.assembly>.assemblypanel>.assembly-2d{grid-column:1;grid-row:2;min-height:0}
+  .canvases.assembly>.assemblypanel>.canvascaption{grid-column:1;grid-row:3}
+  .canvases.assembly>.assemblypanel>.assembly-pad{grid-column:2;grid-row:2/4;border-top:0;border-left:1px solid #303d44;overflow-y:auto;justify-content:flex-start}
+  .canvases.assembly .pad-top{flex-direction:column;align-items:stretch}
+  .canvases.assembly .pad-piece{min-width:0}
+  .canvases.assembly .pad-body{grid-template-columns:auto auto;justify-content:center;gap:14px}
+  .canvases.assembly .pad-steps{grid-column:1/-1;justify-content:center}
+}
