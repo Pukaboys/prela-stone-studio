@@ -235,3 +235,20 @@ html:has(.site) { scroll-behavior: smooth; }
 .site .activity-list small { display: block; color: var(--muted); }
 .site .activity-who { color: var(--muted); font-size: 0.82rem; text-align: right; }
 @media (max-width: 760px) { .site .activity-list li { grid-template-columns: 1fr; } .site .activity-who { text-align: left; } }
+
+/* Admin: desktop downloads */
+.site .releases { display: grid; gap: 12px; }
+.site .releases h3 { margin: 8px 0 0; }
+.site .releases code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: #11181b; border-radius: 5px; padding: 1px 5px; }
+.site .release-files { list-style: none; margin: 0; padding: 0; display: grid; }
+.site .release-files li { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.site .release-files small { display: block; color: var(--muted); font-size: 0.8rem; }
+.site .release-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
+.site .release-notes { grid-column: 1 / -1; }
+.site .release-form textarea { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid #3a474e; background: #11181b; color: var(--text); resize: vertical; }
+.site .release-form input[type=file] { padding: 9px; }
+.site .release-progress { height: 8px; background: #2a353b; border-radius: 99px; overflow: hidden; }
+.site .release-progress span { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+@media (max-width: 760px) { .site .release-files li { grid-template-columns: 1fr; } }
+.site .dl-size { margin-left: 8px; font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+.site .btn.is-disabled { opacity: 0.45; cursor: default; }

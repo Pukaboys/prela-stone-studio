@@ -81,9 +81,14 @@ in; an earlier PayPal checkout is in the git history.)
   saving, slab photos, exports and downloads are switched off until a check
   succeeds ("Check again"). Customers can remove a computer on My account.
   Website sync uses the computer's licence, not a browser place.
-- Downloads: put the installers and a manifest in the data folder under
-  downloads/ (see lib/downloads.ts). Only accounts with an active licence can
-  download; /api/app-version tells the desktop app about updates.
+- Downloads: on /admin → "Desktop app downloads", choose the installers
+  (Windows .exe from `pnpm desktop:win` → release/; Mac .dmg from GitHub →
+  Actions → Desktop installers), check the version (taken from the file name;
+  it must match the app, or installed apps keep offering an update) and press
+  Upload and publish. Files go up in 4 MB pieces and are stored in the data
+  folder under downloads/ with a SHA-256 checksum. Only accounts with an
+  active licence can download (resumable); /api/app-version tells installed
+  apps about the new version.
 
 Environment variables on the host (Hostinger: website → Environment variables):
 

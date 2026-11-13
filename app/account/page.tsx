@@ -31,6 +31,7 @@ export default function AccountPage() {
   const [ownerPending, setOwnerPending] = useState(false);
   const [mail, setMail] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
+  const [downloads, setDownloads] = useState<Record<string, number | null>>({});
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [pw, setPw] = useState({ current: "", next: "" });
 
@@ -48,8 +49,11 @@ export default function AccountPage() {
         }
       });
     fetch("/api/app-version")
-      .then((r) => r.json() as Promise<{ version: string | null }>)
-      .then((v) => setVersion(v.version))
+      .then((r) => r.json() as Promise<{ version: string | null; downloads?: Record<string, number | null> }>)
+      .then((v) => {
+        setVersion(v.version);
+        setDownloads(v.downloads ?? {});
+      })
       .catch(() => undefined);
   }, []);
 
@@ -199,9 +203,24 @@ export default function AccountPage() {
             {version ? ` · latest version ${version}` : ""}.
           </p>
           <div className="download-row">
-            <a className="btn btn-ghost" href="/api/download?platform=windows">Windows</a>
-            <a className="btn btn-ghost" href="/api/download?platform=mac-arm">Mac (Apple Silicon)</a>
-            <a className="btn btn-ghost" href="/api/download?platform=mac-intel">Mac (Intel)</a>
+            {(
+              [
+                ["windows", "Windows"],
+                ["mac-arm", "Mac (Apple Silicon)"],
+                ["mac-intel", "Mac (Intel)"],
+              ] as const
+            ).map(([id, label]) =>
+              downloads[id] != null ? (
+                <a key={id} className="btn btn-ghost" href={`/api/download?platform=${id}`}>
+                  {label}
+                  {downloads[id] ? <small className="dl-size">{(downloads[id]! / 1048576).toFixed(0)} MB</small> : null}
+                </a>
+              ) : (
+                <span key={id} className="btn btn-ghost is-disabled" aria-disabled="true" title="Coming soon">
+                  {label} <small className="dl-size">soon</small>
+                </span>
+              ),
+            )}
           </div>
           <h3>Computers using your licence ({account.devices.length} of {l.maxDevices})</h3>
           {account.devices.length === 0 ? (

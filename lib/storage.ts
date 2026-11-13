@@ -29,6 +29,8 @@ export interface ObjectStore {
     meta?: Record<string, string>,
   ): Promise<void>;
   list(prefix: string): Promise<ListedObject[]>;
+  /** File store only: the file on disk for a key (large files are streamed from it). */
+  filePath?(key: string): string;
 }
 
 type CloudflareEnv = Record<string, unknown> & { BUCKET?: R2Bucket };
@@ -94,6 +96,7 @@ async function fileStore(): Promise<ObjectStore> {
   const sidecar = (file: string) => file + ".meta.json";
   type Meta = { contentType: string; meta?: Record<string, string> };
   return {
+    filePath: resolve,
     async get(key) {
       const file = resolve(key);
       try {

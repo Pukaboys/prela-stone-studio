@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "../site.css";
 import { TwoStepCode, TwoStepSetup } from "@/components/site/admin-2fa";
+import AdminReleases from "@/components/site/admin-releases";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import type { PublicAccount } from "@/lib/accounts";
 import { PLANS } from "@/lib/plans";
@@ -203,6 +204,7 @@ export default function Admin() {
                 </ul>
               )}
             </section>
+            <AdminReleases onChanged={reload} />
             <section className="account-card">
               <h2>Activity</h2>
               <p className="muted">Every admin action and two-step login, with time and IP address (this month and last month).</p>
