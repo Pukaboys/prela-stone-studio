@@ -19,6 +19,11 @@ const eslintConfig = defineConfig([
     "mobile/**",
   ]),
   {
+    // vinext's next/link client navigation crashes ("e is not a function" in
+    // startTransition), so the site uses plain <a> links: full page loads.
+    rules: { "@next/next/no-html-link-for-pages": "off" },
+  },
+  {
     // Electron main process and electron-builder hooks are CommonJS.
     files: ["desktop/**/*.cjs"],
     rules: { "@typescript-eslint/no-require-imports": "off" },

@@ -1,6 +1,5 @@
 "use client";
 /** Website header and footer (shared by the home, sign-in and account pages). */
-import Link from "next/link";
 import { useState } from "react";
 
 const LINKS = [
@@ -16,12 +15,12 @@ export function SiteHeader({ signedIn }: { signedIn?: boolean | null }) {
   return (
     <header className="site-header">
       <div className="wrap header-row">
-        <Link className="brand" href="/" prefetch={false} aria-label="Jeo Stone Studio home">
+        <a className="brand" href="/" aria-label="Jeo Stone Studio home">
           <img src="/favicon.svg" alt="" width={34} height={34} />
           <span>
             <b>JEO</b> STONE STUDIO
           </span>
-        </Link>
+        </a>
         <nav className="nav" aria-label="Main">
           {LINKS.map(([href, label]) => (
             <a key={href} href={href}>
@@ -64,12 +63,12 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="wrap footer-row">
-        <Link className="brand" href="/" prefetch={false}>
+        <a className="brand" href="/">
           <img src="/favicon.svg" alt="" width={28} height={28} />
           <span>
             <b>JEO</b> STONE STUDIO
           </span>
-        </Link>
+        </a>
         <nav aria-label="Footer">
           {LINKS.map(([href, label]) => (
             <a key={href} href={href}>

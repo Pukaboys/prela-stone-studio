@@ -4,7 +4,6 @@
  * Without ?token: ask for the email and send a reset link.
  * With ?token (from the email): choose a new password.
  */
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import "../site.css";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
@@ -74,9 +73,9 @@ export default function Reset() {
             </button>
             {error && (
               <p className="auth-foot muted">
-                <Link href="/reset" prefetch={false}>
+                <a href="/reset">
                   Ask for a new link
-                </Link>
+                </a>
               </p>
             )}
           </form>
@@ -114,9 +113,9 @@ export default function Reset() {
               </>
             )}
             <p className="auth-foot muted">
-              <Link href="/login" prefetch={false}>
+              <a href="/login">
                 Back to sign in
-              </Link>
+              </a>
             </p>
           </form>
         )}

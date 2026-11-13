@@ -1,6 +1,5 @@
 "use client";
 /** Account: licence status, buying a plan, computers, downloads, password. */
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import "../site.css";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
@@ -156,9 +155,9 @@ export default function AccountPage() {
               </a>
             ))}
             {contactLinks("").length === 0 && (
-              <Link className="btn btn-ghost" href="/#contact" prefetch={false}>
+              <a className="btn btn-ghost" href="/#contact">
                 Contact us
-              </Link>
+              </a>
             )}
           </div>
         </section>

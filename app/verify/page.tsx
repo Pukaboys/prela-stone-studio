@@ -1,6 +1,5 @@
 "use client";
 /** Opened from the confirmation email: confirms the address, then on to the studio. */
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import "../site.css";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
@@ -30,9 +29,9 @@ export default function Verify() {
               <p className="auth-ok" role="status">
                 Thank you{state.email ? `, ${state.email} is confirmed` : ""}. You can now use the studio and activate the desktop app.
               </p>
-              <Link className="btn btn-primary auth-submit" href="/studio" prefetch={false}>
+              <a className="btn btn-primary auth-submit" href="/studio">
                 Open the studio
-              </Link>
+              </a>
             </>
           )}
           {state.kind === "error" && (
@@ -41,9 +40,9 @@ export default function Verify() {
               <p className="auth-error" role="alert">
                 {state.message}
               </p>
-              <Link className="btn btn-ghost auth-submit" href="/account" prefetch={false}>
+              <a className="btn btn-ghost auth-submit" href="/account">
                 Go to my account
-              </Link>
+              </a>
             </>
           )}
         </div>

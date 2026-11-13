@@ -1,6 +1,5 @@
 "use client";
 /** Sign in, or create an account (starts the free trial). */
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import "../site.css";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
@@ -99,9 +98,9 @@ export default function Login() {
             />
             {mode === "signup" && <small>At least 10 characters, with letters and a number.</small>}
             {mode === "signin" && mail && (
-              <Link className="auth-forgot" href="/reset" prefetch={false}>
+              <a className="auth-forgot" href="/reset">
                 Forgot password?
-              </Link>
+              </a>
             )}
           </label>
           {error && (
