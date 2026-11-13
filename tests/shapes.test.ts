@@ -52,7 +52,7 @@ describe("placement checks use real outlines", () => {
     pr.pieces = [circle, mk({ id: "b", name: "Square", w: 400, h: 400, x: 644, y: 300 })];
     expect(issues(pr)).toEqual([]);
     pr.pieces[1] = { ...pr.pieces[1], x: 642 };
-    expect(issues(pr).some((i) => i.text.includes("blade gap"))).toBe(true);
+    expect(issues(pr).some((i) => i.text.includes("less than 4 mm apart"))).toBe(true);
   });
   it("opening cut by an arch's curve is flagged", () => {
     pr.pieces = [

@@ -130,6 +130,16 @@ limited mode), keeps a copy of unsaved changes in the browser / app so a crash
 or a lost connection loses nothing ("Unsaved changes found → Restore" on the
 next start), and reopens the last project on start.
 
+### Settings (gear button in the studio header)
+
+- Cutting rules, saved with each project: saw blade thickness, edge trim,
+  space between pieces (snap, Auto-arrange and checks), distance from
+  defects, smallest distance from a cut-out to the piece edge (default 50 mm)
+  and between cut-outs. "Use for new projects" makes them the start values.
+- Working preferences, kept on each computer/browser: magnetic snap on/off,
+  snap distance, move grid, arrow-key step, wheel rotation step, new slab
+  thickness, new piece size, autosave, reopen the last project.
+
 ## Desktop ↔ website sync
 
 In the desktop app: Projects → Website sync → enter the website address and

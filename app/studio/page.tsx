@@ -21,6 +21,8 @@ import {
 import OpeningsEditor from "@/components/openings-editor";
 import StudioGate, { type StudioUser } from "@/components/studio/gate";
 import LicenceBanner from "@/components/studio/licence-banner";
+import SettingsContent from "@/components/studio/settings-dialog";
+import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from "@/lib/preferences";
 import QuotePanel from "@/components/quote-panel";
 import SyncPanel from "@/components/sync-panel";
 import ShapeThumb from "@/components/shape-thumb";
@@ -41,6 +43,7 @@ import {
   Download,
   Save,
   FolderOpen,
+  Settings as SettingsIcon,
   Layers,
   ScanLine,
   Move,
@@ -141,6 +144,16 @@ function StudioApp({ user }: { user: StudioUser }) {
     [showLabels, setShowLabels] = useState(true),
     [assembly3d, setAssembly3d] = useState(true);
   const replacePhoto = useRef(false);
+  // Working preferences for this computer (snap, steps, new sizes, autosave).
+  const [prefs, setPrefsState] = useState<Prefs>(DEFAULT_PREFS);
+  const setPrefs = (next: Prefs) => {
+    setPrefsState(next);
+    savePrefs(next);
+  };
+  useEffect(() => {
+    // After the first render (keeps server and client markup equal).
+    Promise.resolve().then(() => setPrefsState(loadPrefs()));
+  }, []);
   // Autosave and the unsaved-changes copy kept on this device.
   const saving = useRef(false),
     autosaveFailed = useRef(false),
@@ -228,7 +241,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     if (blocked("Adding pieces")) return;
     const id = crypto.randomUUID();
     change((p) => {
-      const spot = findFreeSpot(p, slab.id, 800, 600) ?? { x: p.margin, y: p.margin };
+      const spot = findFreeSpot(p, slab.id, prefs.pieceW, prefs.pieceH) ?? { x: p.margin, y: p.margin };
       return {
       ...p,
       pieces: [
@@ -237,8 +250,8 @@ function StudioApp({ user }: { user: StudioUser }) {
           id,
           name: "Piece " + (p.pieces.length + 1),
           slab: slab.id,
-          w: 800,
-          h: 600,
+          w: prefs.pieceW,
+          h: prefs.pieceH,
           x: spot.x,
           y: spot.y,
           ax: 0,
@@ -526,7 +539,7 @@ function StudioApp({ user }: { user: StudioUser }) {
           name: f.name.replace(/\.[^.]+$/, ""),
           w: targetW,
           h: targetH,
-          thickness: replacement ? slab.thickness : 20,
+          thickness: replacement ? slab.thickness : prefs.slabThickness,
           image: url,
           photoWidth,
           photoHeight,
@@ -624,11 +637,11 @@ function StudioApp({ user }: { user: StudioUser }) {
    */
   function snapPosition(project: Project, moving: Piece, x: number, y: number) {
     const slab = project.slabs.find((s) => s.id === moving.slab);
-    const grid = (v: number) => Math.max(0, Math.round(v / 5) * 5);
-    if (!slab) return { x: grid(x), y: grid(y) };
+    const grid = (v: number) => Math.max(0, Math.round(v / prefs.grid) * prefs.grid);
+    if (!slab || !prefs.snap) return { x: grid(x), y: grid(y) };
     const f = footprint(moving),
       gap = pieceGap(project),
-      threshold = 30,
+      threshold = prefs.snapDistance,
       xs = [project.margin, slab.w - project.margin - f.w],
       ys = [project.margin, slab.h - project.margin - f.h];
     for (const other of project.pieces) {
@@ -655,8 +668,8 @@ function StudioApp({ user }: { user: StudioUser }) {
       q = point(e);
     const rawX = d.x + q.x - d.start.x,
       rawY = d.y + q.y - d.start.y;
-    let x = Math.max(0, Math.round(rawX / 5) * 5),
-      y = Math.max(0, Math.round(rawY / 5) * 5);
+    let x = Math.max(0, Math.round(rawX / prefs.grid) * prefs.grid),
+      y = Math.max(0, Math.round(rawY / prefs.grid) * prefs.grid);
     if (!d.assembly) {
       const moving = current.current.pieces.find((p) => p.id === d.id);
       if (moving) {
@@ -695,7 +708,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     };
     if (!v[e.key]) return;
     e.preventDefault();
-    const step = e.shiftKey ? 50 : 5;
+    const step = e.shiftKey ? prefs.nudge * 10 : prefs.nudge;
     const [dx, dy] = v[e.key];
     change((a) => ({
       ...a,
@@ -803,7 +816,7 @@ function StudioApp({ user }: { user: StudioUser }) {
     const p = current.current.pieces.find((q) => q.id === id);
     const delta = Math.sign(e.deltaY || e.deltaX);
     if (!p || !delta) return;
-    const step = e.shiftKey ? 1 : e.ctrlKey || e.metaKey ? 15 : 5;
+    const step = e.shiftKey ? 1 : e.ctrlKey || e.metaKey ? 15 : prefs.rotateStep;
     const angle = Math.round((slabAngleOf(p) + delta * step) / step) * step;
     const now = Date.now();
     if (now - lastWheel.current > 700) checkpoint();
@@ -858,10 +871,10 @@ function StudioApp({ user }: { user: StudioUser }) {
   }, []);
   // Autosave: a few seconds after the last change (not in limited mode).
   useEffect(() => {
-    if (saved !== "dirty" || limited) return;
+    if (saved !== "dirty" || limited || !prefs.autosave) return;
     const t = setTimeout(() => void persist(true), AUTOSAVE_MS);
     return () => clearTimeout(t);
-  }, [pr, saved, limited, autoTick]);
+  }, [pr, saved, limited, autoTick, prefs.autosave]);
   // Keep a copy of unsaved changes on this device (crash, closed window, lost connection).
   useEffect(() => {
     if (saved !== "dirty") return;
@@ -894,7 +907,7 @@ function StudioApp({ user }: { user: StudioUser }) {
       });
       return;
     }
-    const last = recall(LAST_PROJECT);
+    const last = loadPrefs().reopenLast ? recall(LAST_PROJECT) : null;
     if (!last) return;
     fetch("/api/projects?id=" + encodeURIComponent(last))
       .then(async (r) => {
@@ -1011,6 +1024,9 @@ function StudioApp({ user }: { user: StudioUser }) {
               <UserRound size={16} /> <span>Account</span>
             </a>
           )}
+          <button className="quiet settings-button" onClick={() => setDialog("settings")} title="Settings" aria-label="Settings">
+            <SettingsIcon size={17} />
+          </button>
           <button onClick={openProjects}>
             <FolderOpen /> <span>Projects</span>
           </button>
@@ -1271,7 +1287,7 @@ function StudioApp({ user }: { user: StudioUser }) {
                   <div className="canvashead-actions">
                     <button
                       className="quiet"
-                      title="Place every piece on the slabs automatically (largest first, 4 mm apart)"
+                      title={`Place every piece on the slabs automatically (largest first, ${pieceGap(pr)} mm apart)`}
                       onClick={() => arrange(false)}
                     >
                       <LayoutGrid size={15} /> Auto-arrange
@@ -1537,7 +1553,7 @@ function StudioApp({ user }: { user: StudioUser }) {
           className={
             "studio-dialog" +
             (dialog === "photo" ? " photo-dialog" : "") +
-            (dialog === "shape" || dialog === "scan" || dialog === "quote" ? " wide-dialog" : "")
+            (dialog === "shape" || dialog === "scan" || dialog === "quote" || dialog === "settings" ? " wide-dialog" : "")
           }
         >
           <DialogTitle>{dialog && dialogCopy[dialog].title}</DialogTitle>
@@ -1788,6 +1804,9 @@ function StudioApp({ user }: { user: StudioUser }) {
                   const p = defaultProject();
                   p.name = "Untitled project";
                   p.pieces = [];
+                  // Cutting rules chosen in Settings → "Use for new projects".
+                  const { kerf, margin, ...cut } = prefs.newProject;
+                  Object.assign(p, { kerf, margin, cut });
                   setPr(p);
                   setSid(p.slabs[0].id);
                   setSelected("");
@@ -1851,6 +1870,9 @@ function StudioApp({ user }: { user: StudioUser }) {
           )}
           {dialog === "checks" && <ChecksContent warnings={warnings} />}
           {dialog === "help" && <HelpContent />}
+          {dialog === "settings" && (
+            <SettingsContent project={pr} change={change} prefs={prefs} setPrefs={setPrefs} notify={(text) => toast.success(text)} />
+          )}
 
           {dialog === "defects" && <DefectsContent project={pr} slab={slab} change={change} />}
         </DialogContent>

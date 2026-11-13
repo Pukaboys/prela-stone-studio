@@ -8,6 +8,7 @@ import {
   pieceOutline,
   roundedRect,
   tooClose,
+  edgeDistance,
   validShape,
   type HoleKind,
   type PieceShape,
@@ -133,9 +134,24 @@ export type Project = {
   defects: Defect[];
   kerf: number;
   margin: number;
+  /** Extra cutting rules (optional; missing values use CUT_DEFAULTS). */
+  cut?: Partial<CutRules>;
   /** Prices for the quote (optional). */
   pricing?: Pricing;
 };
+/** Cutting rules saved with a project, besides the saw thickness and edge trim. */
+export type CutRules = {
+  /** Space left between neighbouring pieces (snap, auto-arrange, checks); never less than the saw. */
+  gap: number;
+  /** Distance pieces must keep from marked defects. */
+  defectClearance: number;
+  /** Smallest distance from a cut-out (sink, hob…) to the piece edge; 0 = no check. */
+  openingEdge: number;
+  /** Smallest distance between two cut-outs in one piece (never less than the saw). */
+  openingGap: number;
+};
+export const CUT_DEFAULTS: CutRules = { gap: 4, defectClearance: 0, openingEdge: 50, openingGap: 0 };
+export const cutRules = (pr: Pick<Project, "cut">): CutRules => ({ ...CUT_DEFAULTS, ...pr.cut });
 export const colors = ["#bde96e", "#65cbd5", "#ddaeec", "#f2be70", "#95aafa"];
 export function demo(): Project {
   return {
@@ -350,10 +366,10 @@ export function opening(p: Piece) {
         : (p.h - p.holeH) / 2 + (p.holeY ?? 0);
   return { x, y, w: p.holeW, h: p.holeH };
 }
-/** Space the magnetic snap leaves between neighbouring pieces on a slab. */
-export const SNAP_GAP = 4;
-/** Gap actually used: never less than the saw blade, so snapped pieces pass checks. */
-export const pieceGap = (pr: Project) => Math.max(SNAP_GAP, pr.kerf);
+/** Default space the magnetic snap leaves between neighbouring pieces on a slab. */
+export const SNAP_GAP = CUT_DEFAULTS.gap;
+/** Gap actually used: the project's piece spacing, never less than the saw blade. */
+export const pieceGap = (pr: Pick<Project, "kerf" | "cut">) => Math.max(cutRules(pr).gap, pr.kerf);
 
 /**
  * First free position for a w × h footprint on a slab, keeping the edge trim
@@ -531,6 +547,9 @@ export function outlineOnSlab(p: Piece): Pt[] {
  */
 export function issues(pr: Project): Issue[] {
   const out: Issue[] = [];
+  const rules = cutRules(pr),
+    gap = pieceGap(pr),
+    holeGap = Math.max(rules.openingGap, pr.kerf);
   const outlines = new Map(pr.pieces.map((p) => [p.id, outlineOnSlab(p)]));
   for (const p of pr.pieces) {
     const s = pr.slabs.find((s) => s.id === p.slab);
@@ -551,22 +570,28 @@ export function issues(pr: Project): Issue[] {
       const name = `${p.name}: ${o.label || `opening ${n + 1}`}`;
       if (!(o.w > 0 && o.h > 0) || o.w >= p.w || o.h >= p.h) out.push({ id: p.id, kind: "opening", text: name + " has invalid dimensions" });
       else if (!containsPolygon(shape, pts)) out.push({ id: p.id, kind: "opening", text: name + " extends outside the piece" });
-      // Openings need the saw gap between them, too.
+      else if (rules.openingEdge > 0 && edgeDistance(shape, pts) < rules.openingEdge - 1e-6)
+        out.push({ id: p.id, kind: "opening", text: `${name} is closer than ${rules.openingEdge} mm to the piece edge` });
+      // Openings need space between them, too.
       for (let k = n + 1; k < holes.length; k++)
-        if (tooClose(pts, holes[k].pts, pr.kerf))
-          out.push({ id: p.id, kind: "opening", text: `${name} is too close to ${holes[k].o.label || `opening ${k + 1}`}` });
+        if (tooClose(pts, holes[k].pts, holeGap))
+          out.push({ id: p.id, kind: "opening", text: `${name} is closer than ${holeGap} mm to ${holes[k].o.label || `opening ${k + 1}`}` });
     });
     const mine = outlines.get(p.id)!;
     for (const q of pr.pieces) {
       if (q.id <= p.id || q.slab !== p.slab) continue;
-      if (tooClose(mine, outlines.get(q.id)!, pr.kerf)) {
-        const text = p.name + " / " + q.name + ": overlap or insufficient blade gap";
+      if (tooClose(mine, outlines.get(q.id)!, gap)) {
+        const text = `${p.name} / ${q.name}: overlap or less than ${gap} mm apart`;
         out.push({ id: p.id, related: q.id, kind: "placement", text });
       }
     }
     for (const d of pr.defects.filter((d) => d.slab === p.slab)) {
-      if (tooClose(mine, roundedRect(d.w, d.h, undefined, d.x, d.y), 0))
-        out.push({ id: p.id, kind: "placement", text: p.name + ": intersects a marked defect" });
+      if (tooClose(mine, roundedRect(d.w, d.h, undefined, d.x, d.y), rules.defectClearance))
+        out.push({
+          id: p.id,
+          kind: "placement",
+          text: p.name + (rules.defectClearance > 0 ? `: closer than ${rules.defectClearance} mm to a marked defect` : ": intersects a marked defect"),
+        });
     }
   }
   return out;
@@ -674,6 +699,7 @@ export function validProject(input: unknown): input is Project {
   if (!Array.isArray(p.pieces) || p.pieces.length > 100) return false;
   if (!Array.isArray(p.defects) || p.defects.length > 100) return false;
   if (![p.kerf, p.margin].every((n) => num(n, 0, 500))) return false;
+  if (p.cut !== undefined && !(isObj(p.cut) && Object.entries(p.cut).every(([k, v]) => k in CUT_DEFAULTS && num(v, 0, 1000)))) return false;
   if (!validPricing(p.pricing)) return false;
   if (!p.slabs.every(validSlab)) return false;
   const slabIds = new Set(p.slabs.map((s: Obj) => s.id));

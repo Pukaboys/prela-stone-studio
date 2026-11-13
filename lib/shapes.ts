@@ -244,6 +244,20 @@ export function tooClose(A: Pt[], B: Pt[], gap: number) {
   return false;
 }
 
+/** Shortest distance between the outlines of two polygons (0 if they cross). */
+export function edgeDistance(A: Pt[], B: Pt[]) {
+  let best = Infinity;
+  for (let i = 0; i < A.length; i++) {
+    const p = A[i], q = A[(i + 1) % A.length];
+    for (let j = 0; j < B.length; j++) {
+      const r = B[j], s = B[(j + 1) % B.length];
+      if (segmentsCross(p, q, r, s)) return 0;
+      best = Math.min(best, pointSegDist(p, r, s), pointSegDist(r, p, q));
+    }
+  }
+  return best;
+}
+
 /** True when every point of `inner` lies inside `outer` (used for openings). */
 export const containsPolygon = (outer: Pt[], inner: Pt[]) =>
   inner.every((p) => pointInPolygon(p, outer)) &&

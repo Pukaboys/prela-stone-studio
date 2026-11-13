@@ -26,7 +26,7 @@ describe("multiple openings", () => {
     pr.pieces = [{ ...counter, ...setOpenings([sink, tap]) } as Piece];
     expect(issues(pr)).toEqual([]);
     pr.pieces = [{ ...counter, ...setOpenings([sink, { ...tap, dy: 502 }]) } as Piece];
-    expect(issues(pr).some((i) => i.text.includes("Sink is too close to Tap hole"))).toBe(true);
+    expect(issues(pr).some((i) => i.text.includes("Sink is closer than 4 mm to Tap hole"))).toBe(true);
     pr.pieces = [{ ...counter, ...setOpenings([{ ...sink, dx: 1500 }]) } as Piece];
     expect(issues(pr).some((i) => i.text.includes("Sink extends outside the piece"))).toBe(true);
   });

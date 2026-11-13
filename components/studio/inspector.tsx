@@ -204,6 +204,9 @@ export default function Inspector({
         <button className="textbutton" onClick={() => setDialog("defects")}>
           Manage slab defects <ArrowUpRight size={14} />
         </button>
+        <button className="textbutton" onClick={() => setDialog("settings")}>
+          More cutting rules and settings <ArrowUpRight size={14} />
+        </button>
       </div>
     </aside>
   );

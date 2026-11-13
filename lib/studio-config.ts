@@ -2,7 +2,7 @@
 /** Build stamp (date and commit) injected at build time; "dev" in tests. */
 export const BUILD = typeof __BUILD_INFO__ !== "undefined" ? __BUILD_INFO__ : { commit: "dev", date: "" };
 
-export type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "quote" | "scan" | "projects" | "export" | "checks" | "help" | "defects";
+export type DialogId = "" | "slab" | "photo" | "shape" | "edges" | "openings" | "quote" | "scan" | "projects" | "export" | "checks" | "help" | "defects" | "settings";
 export const dialogCopy: Record<Exclude<DialogId, "">, { title: string; description: string }> = {
   slab: { title: "Slab settings", description: "Use the actual measurements of the photographed slab." },
   photo: { title: "Adjust slab photo", description: "Straighten, correct perspective and frame the slab edges." },
@@ -16,6 +16,7 @@ export const dialogCopy: Record<Exclude<DialogId, "">, { title: string; descript
   checks: { title: "Placement checks", description: "Rectangular placement checks for the current project." },
   help: { title: "From slab to finished surface", description: "Plan the pattern before you make the cut." },
   defects: { title: "Marked defects", description: "Mark damaged areas so placement checks keep pieces clear of them." },
+  settings: { title: "Settings", description: "Cutting rules for this project, and how the studio works on this computer." },
 };
 export type SaveState = "new" | "dirty" | "saved";
 export const saveLabels: Record<SaveState, string> = {

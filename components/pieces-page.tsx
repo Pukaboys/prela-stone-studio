@@ -15,7 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import Num from "@/components/num-field";
-import { hasIssue, pieceArea, rotateOnSlab, slabAngleOf, type Issue, type Piece, type Project } from "@/lib/model";
+import { hasIssue, pieceArea, pieceGap, rotateOnSlab, slabAngleOf, type Issue, type Piece, type Project } from "@/lib/model";
 import { SHAPE_LABEL } from "@/lib/shapes";
 import ShapeThumb from "@/components/shape-thumb";
 import { EdgeCutsBadge } from "@/components/edge-cuts";
@@ -256,7 +256,7 @@ export default function PiecesPage({
             <Plus size={16} /> Add another piece
           </button>
           <span>
-            New pieces are placed in the first free spot on their slab, {Math.max(4, project.kerf)} mm
+            New pieces are placed in the first free spot on their slab, {pieceGap(project)} mm
             apart.
           </span>
         </div>
