@@ -59,6 +59,13 @@ jobs:
         shell: bash
         run: |
           ARGS="${{ matrix.target }} --publish never"
+          # No certificate: remove the empty variables. electron-builder reads an
+          # empty CSC_LINK as the project folder ("... not a file") and fails.
+          if [ -z "$CSC_LINK" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            # Apple Silicon only runs signed apps: sign ad-hoc (no certificate needed).
+            if [ "${{ runner.os }}" = "macOS" ]; then ARGS="$ARGS -c.mac.identity=-"; fi
+          fi
           # Notarize on macOS only when Apple credentials are configured.
           if [ "${{ runner.os }}" = "macOS" ] && [ -n "$CSC_LINK" ] && [ -n "$APPLE_ID" ]; then ARGS="$ARGS -c.mac.notarize=true"; fi
           pnpm exec electron-builder $ARGS
