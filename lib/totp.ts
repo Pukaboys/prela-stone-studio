@@ -4,7 +4,7 @@
  * 30-second steps, SHA-1, one step of clock drift allowed either way, and a
  * code can be used only once (replay protection by step counter).
  */
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -75,18 +75,39 @@ export const otpauthUri = (email: string, secret: string) =>
   `otpauth://totp/${encodeURIComponent("Jeo Stone Studio:" + email)}?secret=${secret}&issuer=${encodeURIComponent("Jeo Stone Studio")}&algorithm=SHA1&digits=6&period=${STEP_SECONDS}`;
 
 // ---------------------------------------------------------------- recovery codes
-const hashCode = (c: string) => createHash("sha256").update(c.toLowerCase().replace(/[^a-z0-9]/g, "")).digest("hex");
+// Stored as "s1:<salt>:<scrypt hash>" (one salt per set of codes), so a copy
+// of the data folder does not give the codes away quickly. Older sets were
+// plain SHA-256 hashes; those still work until replaced.
+const normal = (c: string) => c.toLowerCase().replace(/[^a-z0-9]/g, "");
+const legacyHash = (c: string) => createHash("sha256").update(normal(c)).digest("hex");
+const slowHash = (c: string, salt: string) =>
+  new Promise<string>((resolve, reject) =>
+    scrypt(normal(c), salt, 32, { N: 16384, r: 8, p: 1 }, (e, key) => (e ? reject(e) : resolve(key.toString("hex")))),
+  );
 
 /** Ten one-time recovery codes ("abcd-efgh") and their hashes for storage. */
-export function newRecoveryCodes() {
+export async function newRecoveryCodes() {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
   const codes = Array.from({ length: 10 }, () => {
     const b = randomBytes(8);
     const s = Array.from(b, (x) => chars[x % chars.length]).join("");
     return `${s.slice(0, 4)}-${s.slice(4)}`;
   });
-  return { codes, hashes: codes.map(hashCode) };
+  const salt = randomBytes(16).toString("hex");
+  const hashes = await Promise.all(codes.map(async (c) => `s1:${salt}:${await slowHash(c, salt)}`));
+  return { codes, hashes };
 }
 
 /** Index of the matching stored recovery-code hash, or -1. */
-export const findRecoveryCode = (hashes: string[], code: string) => hashes.indexOf(hashCode(code));
+export async function findRecoveryCode(hashes: string[], code: string) {
+  const bySalt = new Map<string, string>();
+  for (let i = 0; i < hashes.length; i++) {
+    const [kind, salt, hash] = hashes[i].split(":");
+    if (kind === "s1" && salt && hash) {
+      if (!bySalt.has(salt)) bySalt.set(salt, await slowHash(code, salt));
+      const mine = Buffer.from(bySalt.get(salt)!, "hex"), stored = Buffer.from(hash, "hex");
+      if (mine.length === stored.length && timingSafeEqual(mine, stored)) return i;
+    } else if (hashes[i] === legacyHash(code)) return i;
+  }
+  return -1;
+}

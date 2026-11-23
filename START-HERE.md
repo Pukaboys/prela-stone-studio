@@ -98,12 +98,13 @@ Environment variables on the host (Hostinger: website → Environment variables)
 | ADMIN_EMAIL | Your own account: opens /admin, and sees the projects made before accounts existed. Counts only after the address is proven by its confirmation (or reset) link, so nobody can claim it by signing up first |
 | ADMIN_ACCOUNT_ID | Optional: your account's ID instead (shown on My account). Needed while email is not set up |
 | SESSION_SECRET | Optional; otherwise generated once and stored in the data folder |
-| SITE_URL | The website address used in email links, e.g. `https://jeostonestudio.com` (set it once email is on) |
+| SITE_URL | The website address used in email links, e.g. `https://jeostonestudio.com`. **Required for email**: without it no email is sent (links are never built from the request, which an attacker could fake) |
 | SMTP_HOST, SMTP_PORT | Hostinger: `smtp.hostinger.com`, `465` |
 | SMTP_USER, SMTP_PASS | The mailbox that sends, e.g. `info@your-domain.com`, and its password |
 | SMTP_SECURE | Optional: `ssl` (default on 465) or `starttls` (587) |
 | MAIL_FROM | Optional sender name, e.g. `Jeo Stone Studio <info@your-domain.com>` |
-| CRON_SECRET | Optional, 16+ characters: lets a cron job call `/api/cron/reminders?key=…` |
+| CRON_SECRET | Optional, 16+ characters: lets a cron job call `/api/cron/reminders` with the header `Authorization: Bearer <secret>` (or `?key=…`, which ends up in access logs) |
+| PROXY_HOPS | Optional, default `1`: how many proxies of your host sit in front of the app. Rate limits use the visitor address those proxies add to X-Forwarded-For; addresses the visitor sends themselves are ignored. If every visitor shows the same IP in the admin activity log, raise it by one |
 
 The public half of the licence key is built into the app
 (lib/licence-public-key.ts). If the private key is ever lost or leaked,

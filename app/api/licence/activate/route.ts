@@ -1,4 +1,4 @@
-import { checkPassword, clientIp, fail, findByEmail, forgive, limited } from "@/lib/accounts";
+import { ACCOUNT_TRIES, clientIp, fail, findByEmail, forgive, limited, passwordMatches } from "@/lib/accounts";
 import { body, err, ok } from "@/lib/http";
 import { LicenceRefused, issueToken } from "@/lib/licence-server";
 
@@ -6,20 +6,25 @@ import { LicenceRefused, issueToken } from "@/lib/licence-server";
 export async function POST(req: Request) {
   const b = await body<{ email: string; password: string; deviceId: string; deviceName: string }>(req);
   const email = String(b.email ?? "").trim().toLowerCase();
-  const key = `activate:${clientIp(req)}:${email}`;
-  if (limited(key)) return err(429, "Too many attempts. Wait 15 minutes and try again.");
+  const ip = clientIp(req);
+  const key = `activate:${ip}:${email}`;
+  const acct = `password:${email}`;
+  if (limited(key) || limited("activate-ip:" + ip, 30) || limited(acct, ACCOUNT_TRIES))
+    return err(429, "Too many attempts. Wait 15 minutes and try again.");
   const a = email ? await findByEmail(email) : null;
-  if (!a || !(await checkPassword(a, String(b.password ?? "")))) {
+  if (!(await passwordMatches(a, String(b.password ?? "")))) {
     fail(key);
+    fail("activate-ip:" + ip);
+    fail(acct);
     await new Promise((r) => setTimeout(r, 400));
     return err(401, "Wrong email or password.");
   }
   forgive(key);
   try {
-    return ok({ token: await issueToken(a, String(b.deviceId ?? ""), b.deviceName) });
+    return ok({ token: await issueToken(a!, String(b.deviceId ?? ""), b.deviceName) });
   } catch (e) {
     if (e instanceof LicenceRefused) return err(e.status, e.message);
     console.error(e);
-    return err(503, e instanceof Error ? e.message : "Activation failed.");
+    return err(503, "Activation failed.");
   }
 }

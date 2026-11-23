@@ -1,10 +1,10 @@
 {
   "name": "jeo-stone-studio",
   "productName": "Jeo Stone Studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Slab planning, vein matching and cut lists for stone fabricators.",
   "author": "Jeo Stone Studio",
   "main": "main.cjs",
-  "licenseServer": "https://orange-heron-586966.hostingersite.com",
+  "licenseServer": "https://studio.62-83-116-237.sslip.io",
   "private": true
 }

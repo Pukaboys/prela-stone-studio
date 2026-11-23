@@ -91,12 +91,17 @@ export async function finishUpload(uploadId: string, platform: Platform, fileNam
   const part = file(UPLOADS + uploadId + ".part");
   const stat = await fs.promises.stat(part).catch(() => null);
   if (!stat || stat.size !== size) throw new ReleaseError("The upload is incomplete. Try again.");
+  const sha256 = await hashFile(fs, part);
+  await fs.promises.rename(part, file("downloads/" + name));
+  return { name, size, sha256 };
+}
+
+async function hashFile(fs: typeof import("node:fs"), path: string) {
   const hash = createHash("sha256");
   await new Promise<void>((resolve, reject) =>
-    fs.createReadStream(part).on("data", (d) => hash.update(d)).on("end", () => resolve()).on("error", reject),
+    fs.createReadStream(path).on("data", (d) => hash.update(d)).on("end", () => resolve()).on("error", reject),
   );
-  await fs.promises.rename(part, file("downloads/" + name));
-  return { name, size, sha256: hash.digest("hex") };
+  return hash.digest("hex");
 }
 
 /** Make a version live. Platforms not given keep their current file; unused old files are removed. */
@@ -109,10 +114,12 @@ export async function publish(version: string, notes: string, files: Partial<Rec
     const field = PLATFORMS[platform]?.field;
     if (!field || !f) continue;
     const name = safeName(f.name);
-    if (!(await fs.promises.stat(file("downloads/" + name)).catch(() => null))) throw new ReleaseError(`${name} was not uploaded.`);
+    const stat = await fs.promises.stat(file("downloads/" + name)).catch(() => null);
+    if (!stat) throw new ReleaseError(`${name} was not uploaded.`);
+    // Size and checksum come from the file on disk, never from the request.
     next[field] = name;
-    next.sizes![field] = f.size;
-    next.sha256![field] = f.sha256;
+    next.sizes![field] = stat.size;
+    next.sha256![field] = await hashFile(fs, file("downloads/" + name));
   }
   await store.put(MANIFEST, JSON.stringify(next, null, 2), "application/json");
   // Remove installers no version points to any more.

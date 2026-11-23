@@ -9,7 +9,7 @@
  */
 import { body, err, ok } from "@/lib/http";
 import { OFFLINE_GRACE_DAYS, verifyLicence } from "@/lib/licence-token";
-import { deviceId, isDesktop, isLimited, localLicence, localToken, saveLocalToken } from "@/lib/studio-access";
+import { desktopForbidden, desktopRequestOk, deviceId, isDesktop, isLimited, localLicence, localToken, saveLocalToken } from "@/lib/studio-access";
 import { getSetting } from "@/lib/storage";
 
 async function server() {
@@ -64,11 +64,13 @@ async function status(force = false) {
 
 export async function GET(req: Request) {
   if (!isDesktop()) return err(404, "Not available.");
+  if (!desktopRequestOk(req)) return desktopForbidden();
   return ok(await status(new URL(req.url).searchParams.has("check")));
 }
 
 export async function POST(req: Request) {
   if (!isDesktop()) return err(404, "Not available.");
+  if (!desktopRequestOk(req)) return desktopForbidden();
   const b = await body<{ action: string; email: string; password: string }>(req);
   try {
     if (b.action === "activate") {

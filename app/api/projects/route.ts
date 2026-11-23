@@ -1,5 +1,6 @@
 import { validProject } from "@/lib/model";
-import { requireStudio } from "@/lib/studio-access";
+import { TooLarge, readText } from "@/lib/http";
+import { quotaFull, requireStudio } from "@/lib/studio-access";
 import { getStore } from "@/lib/storage";
 
 const ID = /^[a-zA-Z0-9-]+$/;
@@ -43,18 +44,26 @@ export async function POST(req: Request) {
     const access = await requireStudio(req);
     if (access instanceof Response) return access;
     const { prefix } = access;
-    const raw = await req.text();
+    // Read at most 4 bytes per allowed character (UTF-8), then check characters.
+    const raw = await readText(req, MAX_CHARS * 4);
     if (raw.length > MAX_CHARS) return new Response("Project too large", { status: 413 });
     const p = JSON.parse(raw);
     if (!validProject(p)) return new Response("Invalid project data", { status: 400 });
     const id = p.id || crypto.randomUUID();
     if (!ID.test(id)) return new Response("Invalid project ID", { status: 400 });
+    const store = await getStore();
+    if (!(await store.get(prefix + "projects/" + id + ".json"))) {
+      const full = await quotaFull(access, "projects");
+      if (full) return full;
+    }
     p.id = id;
-    await (await getStore()).put(prefix + "projects/" + id + ".json", JSON.stringify(p), "application/json", {
+    await store.put(prefix + "projects/" + id + ".json", JSON.stringify(p), "application/json", {
       name: p.name,
     });
     return Response.json({ id });
   } catch (e) {
+    if (e instanceof TooLarge) return new Response("Project too large", { status: 413 });
+    if (e instanceof SyntaxError) return new Response("Invalid project data", { status: 400 });
     console.error(e);
     return new Response("Could not save. Your work is still open; please try again.", {
       status: 503,

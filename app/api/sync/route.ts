@@ -13,7 +13,8 @@
 import { validProject, type Project } from "@/lib/model";
 import { verifyLicence } from "@/lib/licence-token";
 import { getStore, type ObjectStore } from "@/lib/storage";
-import { localLicence, localToken } from "@/lib/studio-access";
+import { desktopForbidden, desktopRequestOk, localLicence, localToken } from "@/lib/studio-access";
+import { body as readBody } from "@/lib/http";
 
 const STORED = /^\/api\/images\?id=([a-zA-Z0-9-]+)$/;
 type Link = { url: string; token: string };
@@ -51,8 +52,9 @@ function relink(p: Project, map: Map<string, string>): Project {
   return { ...p, slabs: p.slabs.map((s) => ({ ...s, image: r(s.image), ...(s.edit ? { edit: { ...s.edit, source: r(s.edit.source) } } : {}) })) };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!available()) return json({ available: false });
+  if (!desktopRequestOk(req)) return desktopForbidden();
   const s = await link();
   const email = s ? ((await verifyLicence(s.token))?.email ?? null) : null;
   return json({ available: true, connected: !!s, url: s?.url ?? null, email });
@@ -60,9 +62,10 @@ export async function GET() {
 
 export async function POST(req: Request) {
   if (!available()) return json({ error: "Sync is only available in the desktop app." }, 404);
+  if (!desktopRequestOk(req)) return desktopForbidden();
   const store = await getStore();
   try {
-    const body = (await req.json()) as { action?: string; id?: string };
+    const body = await readBody<{ action: string; id: string }>(req);
     const s = await link();
     if (!s) return json({ error: "Sign in to the app with your account first." }, 400);
     if (!(await localLicence()).ok) return json({ error: "Limited mode: renew your licence or connect to the internet to sync." }, 402);

@@ -16,9 +16,12 @@ export async function POST(req: Request) {
   if (limited(ip, 5)) return err(429, "Too many requests. Wait 15 minutes and try again.");
   fail(ip);
   const email = String((await body<{ email: string }>(req)).email ?? "").trim().toLowerCase();
-  const a = email ? await findByEmail(email) : null;
+  // At most 3 reset emails to one address per 15 minutes, whoever asks.
+  const to = "forgot-to:" + email;
+  const a = email && !limited(to, 3) ? await findByEmail(email) : null;
   if (a) {
-    const url = `${await siteUrl(req)}/reset?token=${encodeURIComponent(await makeLinkToken("reset", a, 1))}`;
+    fail(to);
+    const url = `${await siteUrl()}/reset?token=${encodeURIComponent(await makeLinkToken("reset", a, 1))}`;
     void sendMail(resetEmail(a, url));
   }
   return ok({ sent: true });

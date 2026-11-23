@@ -15,6 +15,7 @@
 import { BROWSER_IDLE_DAYS, CURRENCY, MAX_BROWSERS, TRIAL_DAYS, TRIAL_DEVICES, planById, type PlanId } from "@/lib/plans";
 import { mailEnabled } from "@/lib/mail";
 import { getSetting, getStore } from "@/lib/storage";
+import { safeEqual } from "@/lib/http";
 
 export type Device = { id: string; name: string; activatedAt: string; lastSeen: string };
 /** A signed-in browser. */
@@ -69,12 +70,7 @@ export function passwordProblem(p: string) {
   if (!/[a-zA-Z]/.test(p) || !/[0-9]/.test(p)) return "Use letters and at least one number.";
   return null;
 }
-function same(a: string, b: string) {
-  const x = enc.encode(a), y = enc.encode(b);
-  let d = x.length ^ y.length;
-  for (let i = 0; i < Math.max(x.length, y.length); i++) d |= (x[i] ?? 0) ^ (y[i] ?? 0);
-  return d === 0;
-}
+const same = safeEqual;
 async function sha256(s: string) {
   return hex(await crypto.subtle.digest("SHA-256", enc.encode(s)));
 }
@@ -181,6 +177,36 @@ export async function findByEmail(email: string) {
 }
 export const saveAccount = (a: Account) => writeJson(accountKey(a.id), a);
 
+/**
+ * One change to an account at a time. Read-change-write sequences that run
+ * at the same moment (two activations, a recovery code used twice, a
+ * "last seen" update) would otherwise overwrite each other's changes.
+ */
+const locks = new Map<string, Promise<unknown>>();
+export function withAccountLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const run = (locks.get(id) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => undefined);
+  locks.set(id, tail);
+  void tail.then(() => {
+    if (locks.get(id) === tail) locks.delete(id);
+  });
+  return run;
+}
+
+/**
+ * Change an account safely: re-reads the newest copy under the account lock,
+ * applies `change`, saves it. `change` returns false to skip saving.
+ * Resolves to the updated account (null when it no longer exists).
+ */
+export function updateAccount(id: string, change: (a: Account) => void | boolean | Promise<void | boolean>) {
+  return withAccountLock(id, async () => {
+    const a = await getAccount(id);
+    if (!a) return null;
+    if ((await change(a)) !== false) await saveAccount(a);
+    return a;
+  });
+}
+
 // ---------------------------------------------------------------- accounts
 export async function createAccount(email: string, password: string, name?: string): Promise<Account> {
   const e = normaliseEmail(email);
@@ -207,6 +233,20 @@ export async function createAccount(email: string, password: string, name?: stri
 
 export async function checkPassword(account: Account, password: string) {
   return same(await scrypt(password, account.salt), account.hash);
+}
+
+const DUMMY_SALT = "00000000000000000000000000000000";
+/**
+ * checkPassword for a sign-in form: also does the slow hash when there is no
+ * such account, so the answer takes as long either way (response time does
+ * not reveal which emails have accounts).
+ */
+export async function passwordMatches(account: Account | null, password: string) {
+  if (!account) {
+    await scrypt(password, DUMMY_SALT);
+    return false;
+  }
+  return checkPassword(account, password);
 }
 
 /** New password; signs out every browser (the caller then signs this one in again). */
@@ -338,9 +378,12 @@ export async function startSession(req: Request, a: Account) {
 
 /** Sign one browser out (removes it from the account). */
 export async function endSession(a: Account, sessionId: string) {
-  const before = (a.sessions ?? []).length;
-  a.sessions = (a.sessions ?? []).filter((s) => s.id !== sessionId);
-  if (a.sessions.length !== before) await saveAccount(a);
+  const fresh = await updateAccount(a.id, (x) => {
+    const before = (x.sessions ?? []).length;
+    x.sessions = (x.sessions ?? []).filter((s) => s.id !== sessionId);
+    return x.sessions.length !== before;
+  });
+  a.sessions = fresh?.sessions ?? (a.sessions ?? []).filter((s) => s.id !== sessionId);
 }
 export const clearSessionCookie = (req: Request) => `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure(req) ? "; Secure" : ""}`;
 
@@ -365,8 +408,13 @@ export async function currentSession(req: Request): Promise<{ account: Account; 
   const s = a?.sessions?.find((x) => x.id === sessionId);
   if (!a || !s) return null; // signed out from another browser, or the password changed
   if (Date.now() - new Date(s.lastSeen).getTime() > 3600e3) {
-    s.lastSeen = new Date().toISOString();
-    await saveAccount(a);
+    const fresh = await updateAccount(a.id, (x) => {
+      const here = x.sessions?.find((y) => y.id === sessionId);
+      if (!here) return false;
+      here.lastSeen = new Date().toISOString();
+    });
+    if (fresh?.sessions?.some((x) => x.id === sessionId)) return { account: fresh, sessionId };
+    return null;
   }
   return { account: a, sessionId };
 }
@@ -377,15 +425,40 @@ export async function currentAccount(req: Request): Promise<Account | null> {
 }
 
 // ---------------------------------------------------------------- abuse protection
+/** Wrong passwords allowed per account per 15 minutes, from all addresses together (website sign-in and desktop activation). */
+export const ACCOUNT_TRIES = 20;
 const attempts = new Map<string, { n: number; since: number }>();
 const WINDOW = 15 * 60 * 1000;
-export const clientIp = (req: Request) =>
-  (req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0] ?? "local").trim();
+const onCloudflare = () => typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+/**
+ * The visitor's IP address, for rate limits and the activity log.
+ *
+ * Only addresses added by our own proxies are trusted; anything the visitor
+ * sends themselves is ignored, or every limit could be dodged by sending a
+ * made-up address with each request.
+ * - Cloudflare Workers: CF-Connecting-IP (set by Cloudflare, cannot be forged).
+ * - Node (Hostinger): X-Forwarded-For, counted from the right. Each proxy
+ *   appends the address it saw, so the last PROXY_HOPS entries (default 1)
+ *   come from our proxies and the first of those is the real visitor.
+ */
+export function clientIp(req: Request) {
+  if (onCloudflare()) return (req.headers.get("cf-connecting-ip") ?? "local").trim();
+  const chain = (req.headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!chain.length) return "local";
+  const hops = Math.max(1, Math.floor(Number(typeof process !== "undefined" ? process.env.PROXY_HOPS : "") || 1));
+  return chain[Math.max(0, chain.length - hops)];
+}
 export function limited(key: string, max = 10) {
   const a = attempts.get(key);
   return !!a && Date.now() - a.since < WINDOW && a.n >= max;
 }
+/** Drop counters whose window has passed, so the table cannot grow without end. */
+function prune() {
+  const now = Date.now();
+  for (const [k, v] of attempts) if (now - v.since > WINDOW) attempts.delete(k);
+}
 export function fail(key: string) {
+  if (attempts.size > 10_000) prune();
   const a = attempts.get(key);
   if (!a || Date.now() - a.since > WINDOW) attempts.set(key, { n: 1, since: Date.now() });
   else a.n++;

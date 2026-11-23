@@ -9,7 +9,9 @@
  *   SMTP_PASS  the mailbox password
  *   MAIL_FROM  optional, e.g. "Jeo Stone Studio <info@your-domain.com>"
  *
- * Without SMTP_HOST/SMTP_USER/SMTP_PASS nothing is sent (mailEnabled() is
+ *   SITE_URL   required: the site's address, used in the links in emails
+ *
+ * Without SMTP_HOST/SMTP_USER/SMTP_PASS/SITE_URL nothing is sent (mailEnabled() is
  * false) and the site works without email features.
  */
 import { getSetting } from "@/lib/storage";
@@ -18,11 +20,18 @@ export type Mail = { to: string; subject: string; text: string; html: string };
 
 type Config = { host: string; port: number; user: string; pass: string; from: string; tls: boolean; ssl: boolean };
 
+let warned = false;
 async function config(): Promise<Config | null> {
   const host = await getSetting("SMTP_HOST");
   const user = await getSetting("SMTP_USER");
   const pass = await getSetting("SMTP_PASS");
   if (!host || !user || !pass) return null;
+  // Links in emails need the site's real address; never guess it from the request.
+  if (!/^https?:\/\/[^/\s]+/.test((await getSetting("SITE_URL"))?.trim() ?? "")) {
+    if (!warned) console.warn("[mail] SMTP is set up but SITE_URL is not: email stays off until SITE_URL is set (e.g. https://your-domain.com).");
+    warned = true;
+    return null;
+  }
   const port = Number((await getSetting("SMTP_PORT")) || 465);
   const from = (await getSetting("MAIL_FROM")) || `Jeo Stone Studio <${user}>`;
   // Plain connections are only for the test suite's local fake server.

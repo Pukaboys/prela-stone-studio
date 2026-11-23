@@ -199,7 +199,13 @@ describe("licence emails", () => {
     const owner = cookieOf(await signup.POST(req("auth/signup", { body: { email: "owner@example.com", password: "owner-pass-2026" } })));
     // Prove ADMIN_EMAIL with the confirmation link, then turn on two-step login.
     expect((await admin.GET(req("admin/accounts", { cookie: owner }))).status).toBe(403);
-    const confirm = inbox.filter((m) => m.to === "owner@example.com").find((m) => subjectOf(m).includes("Confirm"))!;
+    // Sign-up sends in the background: wait for the message to arrive.
+    let confirm: Received | undefined;
+    for (let i = 0; i < 100 && !confirm; i++) {
+      confirm = inbox.filter((m) => m.to === "owner@example.com").find((m) => subjectOf(m).includes("Confirm"));
+      if (!confirm) await new Promise((r) => setTimeout(r, 30));
+    }
+    if (!confirm) throw new Error("no confirmation email to the owner");
     expect((await verify.POST(req("auth/verify", { body: { token: tokenIn(confirm) } }))).status).toBe(200);
     await setUpTwoStep((body) => twoStep.POST(req("admin/2fa", { body, cookie: owner })));
     const rita = (await accounts.findByEmail("rita@example.com"))!;

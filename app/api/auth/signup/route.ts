@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const a = await createAccount(email, password, typeof b.name === "string" ? b.name : undefined);
     fail(ip); // count successful sign-ups too (max 5 per 15 minutes per address)
     const cookie = await startSession(req, a);
-    const site = await siteUrl(req);
+    const site = await siteUrl();
     if (a.emailVerified === false)
       void sendMail(verifyEmail(a, `${site}/verify?token=${encodeURIComponent(await makeLinkToken("verify", a, 72))}`));
     const owner = (await getSetting("ADMIN_EMAIL"))?.trim().toLowerCase();

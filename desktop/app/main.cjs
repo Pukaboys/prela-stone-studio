@@ -7,7 +7,9 @@
 //   macOS:   ~/Library/Application Support/Jeo Stone Studio/data
 "use strict";
 
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, safeStorage, session, shell } = require("electron");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -30,12 +32,53 @@ if (!app.requestSingleInstanceLock()) app.quit();
 let mainWindow = null;
 let baseUrl = "";
 
+// A new random key at every start. The local server only answers requests
+// that carry it (see lib/studio-access.ts → desktopRequestOk); this app adds
+// it to its own window's requests, so web pages open in the customer's
+// browser cannot use the server on 127.0.0.1.
+const DESKTOP_KEY = crypto.randomBytes(32).toString("hex");
+const DESKTOP_HEADER = "X-Jeo-Desktop";
+
+/**
+ * Key that encrypts the licence in the data folder, kept encrypted by the
+ * operating system (Windows DPAPI / macOS Keychain) so a copied data folder
+ * cannot be used on another computer or by another user.
+ */
+function dataKey() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return "";
+    const file = path.join(app.getPath("userData"), "data-key.bin");
+    if (fs.existsSync(file)) {
+      try {
+        return safeStorage.decryptString(fs.readFileSync(file));
+      } catch (error) {
+        console.error("Could not read the data key; a new one is made (sign in to the app again).", error);
+      }
+    }
+    const key = crypto.randomBytes(32).toString("hex");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, safeStorage.encryptString(key));
+    return key;
+  } catch (error) {
+    console.error("Encryption is not available; the licence is stored unencrypted.", error);
+    return "";
+  }
+}
+
+/** Only web and mail links leave the app (never file:, custom protocols, ...). */
+function openOutside(url) {
+  try {
+    if (["https:", "http:", "mailto:"].includes(new URL(url).protocol)) shell.openExternal(url);
+  } catch {
+    // not a valid URL: ignore
+  }
+}
+
 /**
  * Before the rename the app was "Prela Stone Studio" and kept its data in
  * that app-data folder. Copy it into the new folder once so nothing is lost.
  */
 function migrateOldData(dataDir) {
-  const fs = require("node:fs");
   const old = path.join(app.getPath("appData"), "Prela Stone Studio", "data");
   try {
     if (fs.existsSync(old) && !fs.existsSync(dataDir)) fs.cpSync(old, dataDir, { recursive: true });
@@ -82,11 +125,18 @@ async function startServer() {
   migrateOldData(process.env.DATA_DIR);
   // Enables desktop-only features in the server (website sync).
   process.env.JEO_DESKTOP = "1";
+  process.env.JEO_DESKTOP_KEY = DESKTOP_KEY;
+  process.env.JEO_DATA_KEY = dataKey();
   // Where licences are activated and checked.
   process.env.JEO_LICENSE_SERVER = LICENSE_SERVER;
   // server.js reads PORT/HOST and starts listening when imported.
   await import(pathToFileURL(path.join(serverDir, "server.js")).href);
   baseUrl = `http://127.0.0.1:${port}`;
+  // Add the key to every request this app makes to its own server.
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (isInternal(details.url)) details.requestHeaders[DESKTOP_HEADER] = DESKTOP_KEY;
+    callback({ requestHeaders: details.requestHeaders });
+  });
   await waitForServer(baseUrl + "/");
 }
 
@@ -115,13 +165,13 @@ function createWindow() {
 
   // Keep the window on the studio; open any other link in the browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (!isInternal(url)) shell.openExternal(url);
+    if (!isInternal(url)) openOutside(url);
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (!isInternal(url)) {
       event.preventDefault();
-      shell.openExternal(url);
+      openOutside(url);
     }
   });
 
@@ -163,7 +213,7 @@ async function checkForUpdates(manual = false) {
         message: `Jeo Stone Studio ${latest} is available`,
         detail: `You have version ${app.getVersion()}. Your account page opens in the browser; download and install it over this version — your projects stay.`,
       });
-      if (response === 0) shell.openExternal(`${LICENSE_SERVER}/account`);
+      if (response === 0) openOutside(`${LICENSE_SERVER}/account`);
     } else if (manual) {
       dialog.showMessageBox({ type: "info", message: "You have the latest version.", detail: `Version ${app.getVersion()}.` });
     }
@@ -199,7 +249,7 @@ function buildMenu() {
       role: "help",
       submenu: [
         { label: "Check for Updates…", click: () => checkForUpdates(true) },
-        { label: "My Account (website)", click: () => LICENSE_SERVER && shell.openExternal(`${LICENSE_SERVER}/account`) },
+        { label: "My Account (website)", click: () => LICENSE_SERVER && openOutside(`${LICENSE_SERVER}/account`) },
         { type: "separator" },
         { label: `Version ${app.getVersion()}`, enabled: false },
       ],
@@ -234,7 +284,7 @@ async function smokeTest() {
   if (process.env.JEO_SMOKE_EMAIL) {
     const res = await fetch(baseUrl + "/api/desktop/licence", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Origin: baseUrl },
+      headers: { "Content-Type": "application/json", Origin: baseUrl, [DESKTOP_HEADER]: DESKTOP_KEY },
       body: JSON.stringify({ action: "activate", email: process.env.JEO_SMOKE_EMAIL, password: process.env.JEO_SMOKE_PASSWORD }),
     });
     activation = res.status;

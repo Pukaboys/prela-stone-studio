@@ -1,8 +1,8 @@
 import { sameOriginJson } from "@/lib/accounts";
 import { adminAccess } from "@/lib/admin";
 import { audit } from "@/lib/audit";
-import { PLATFORMS, ReleaseError, appendChunk, finishUpload, manifest, publish, removePlatform, type Platform, type UploadedFile } from "@/lib/downloads";
-import { body, err, ok } from "@/lib/http";
+import { CHUNK_BYTES, PLATFORMS, ReleaseError, appendChunk, finishUpload, manifest, publish, removePlatform, type Platform, type UploadedFile } from "@/lib/downloads";
+import { TooLarge, body, err, ok, readBytes } from "@/lib/http";
 
 /**
  * Owner only (two-step login): upload and publish desktop installers.
@@ -32,6 +32,7 @@ function sameOriginUpload(req: Request) {
 
 const fail = (e: unknown) => {
   if (e instanceof ReleaseError) return err(400, e.message);
+  if (e instanceof TooLarge) return err(413, "Piece too large.");
   console.error(e);
   return err(500, "Something went wrong with the upload.");
 };
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
     const me = await adminAccess(req);
     if (me instanceof Response) return me;
     try {
-      const bytes = new Uint8Array(await req.arrayBuffer());
+      const bytes = await readBytes(req, CHUNK_BYTES);
       return ok({ received: await appendChunk(upload, Number(url.searchParams.get("offset")), bytes) });
     } catch (e) {
       return fail(e);

@@ -9,7 +9,7 @@ import { isDesktop, isOwner } from "@/lib/studio-access";
 export async function GET(req: Request) {
   if (isDesktop()) return ok({ desktop: true, account: null });
   // Site traffic keeps the reminder emails going (at most one run per hour).
-  remindersSoon(await siteUrl(req));
+  remindersSoon(await siteUrl());
   const s = await currentSession(req);
   return ok({
     desktop: false,

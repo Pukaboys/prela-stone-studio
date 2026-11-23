@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const before = a.licence.expiresAt;
     await applyPayment(a, `MANUAL-${Date.now()}`, plan.id, amount.toFixed(2), note);
     await audit(req, by, `Added ${plan.name} plan`, a.email, `€${amount.toFixed(2)} · until ${day(before)} → ${day(a.licence.expiresAt)}${note ? ` · ${note}` : ""}`);
-    if (b.notify !== false) void sendMail(paymentEmail(a, amount.toFixed(2), plan.name, `${await siteUrl(req)}/account`));
+    if (b.notify !== false) void sendMail(paymentEmail(a, amount.toFixed(2), plan.name, `${await siteUrl()}/account`));
     return ok({ account: row(a) });
   }
   if (b.action === "end") {

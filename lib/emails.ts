@@ -8,17 +8,15 @@ import { planById } from "@/lib/plans";
 import { getSetting } from "@/lib/storage";
 
 /**
- * Public address for links in emails: SITE_URL when set (recommended, e.g.
- * https://jeostonestudio.com), otherwise the address of this request.
+ * Public address for links in emails: SITE_URL (e.g. https://jeostonestudio.com).
+ *
+ * Never taken from the request (Host / X-Forwarded-Host): those headers are
+ * chosen by whoever sends the request, and a password-reset link pointing at
+ * their site would hand them the reset token. Without SITE_URL, email is off
+ * (see mailEnabled).
  */
-export async function siteUrl(req?: Request) {
-  const set = (await getSetting("SITE_URL"))?.trim().replace(/\/+$/, "");
-  if (set) return set;
-  if (!req) return "";
-  const u = new URL(req.url);
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? u.host;
-  const proto = req.headers.get("x-forwarded-proto") ?? u.protocol.replace(":", "");
-  return `${proto}://${host}`;
+export async function siteUrl() {
+  return (await getSetting("SITE_URL"))?.trim().replace(/\/+$/, "") ?? "";
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

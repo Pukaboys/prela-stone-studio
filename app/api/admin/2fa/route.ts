@@ -1,4 +1,4 @@
-import { fail, forgive, limited, sameOriginJson, saveAccount } from "@/lib/accounts";
+import { fail, forgive, getAccount, limited, sameOriginJson, saveAccount, withAccountLock } from "@/lib/accounts";
 import { ADMIN_MFA_HOURS, mfaFresh, ownerSession } from "@/lib/admin";
 import { audit } from "@/lib/audit";
 import { body, err, ok } from "@/lib/http";
@@ -21,66 +21,72 @@ export async function POST(req: Request) {
   if (!sameOriginJson(req)) return err(400, "Bad request.");
   const o = await ownerSession(req);
   if (o instanceof Response) return o;
-  const a = o.account;
   const b = await body<{ action: string; code: string }>(req);
-  const key = "admin-2fa:" + a.id;
+  // One request at a time per account, on the newest copy: a recovery code
+  // (or a code step) sent twice at the same moment is accepted only once.
+  return withAccountLock(o.account.id, async () => {
+    const a = await getAccount(o.account.id);
+    const session = a?.sessions?.find((x) => x.id === o.sessionId);
+    if (!a || !session) return err(401, "Sign in first.");
+    const key = "admin-2fa:" + a.id;
 
-  if (b.action === "start") {
-    // Replacing a working setup needs a fresh code first.
-    if (a.totp && !mfaFresh(o.session)) return err(403, "Enter a current code first.");
-    const secret = newSecret();
-    a.totpPending = { secret, at: new Date().toISOString() };
-    await saveAccount(a);
-    return ok({ secret, uri: otpauthUri(a.email, secret) });
-  }
-
-  if (limited(key, 5)) return err(429, "Too many wrong codes. Wait 15 minutes and try again.");
-
-  if (b.action === "confirm") {
-    const p = a.totpPending;
-    if (!p || Date.now() - new Date(p.at).getTime() > 30 * 60e3) return err(400, "Start the setup again.");
-    if (a.totp && !mfaFresh(o.session)) return err(403, "Enter a current code first.");
-    const step = checkTotp(p.secret, String(b.code ?? ""));
-    if (step === null) {
-      fail(key);
-      return err(400, "That code is not right. Check the time on your phone and try the newest code.");
+    if (b.action === "start") {
+      // Replacing a working setup needs a fresh code first.
+      if (a.totp && !mfaFresh(session)) return err(403, "Enter a current code first.");
+      const secret = newSecret();
+      a.totpPending = { secret, at: new Date().toISOString() };
+      await saveAccount(a);
+      return ok({ secret, uri: otpauthUri(a.email, secret) });
     }
-    forgive(key);
-    const { codes, hashes } = newRecoveryCodes();
-    a.totp = { secret: p.secret, enabledAt: new Date().toISOString(), lastStep: step, recovery: hashes };
-    delete a.totpPending;
-    o.session.mfaAt = new Date().toISOString();
-    await saveAccount(a);
-    await audit(req, a.email, "Two-step login set up");
-    return ok({ recovery: codes });
-  }
 
-  if (b.action === "verify") {
-    if (!a.totp) return err(400, "Two-step login is not set up.");
-    const code = String(b.code ?? "").trim();
-    let how = "";
-    const step = checkTotp(a.totp.secret, code, a.totp.lastStep);
-    if (step !== null) {
-      a.totp.lastStep = step;
-      how = "code";
-    } else {
-      const i = findRecoveryCode(a.totp.recovery, code);
-      if (i >= 0) {
-        a.totp.recovery.splice(i, 1); // each recovery code works once
-        how = "recovery code";
+    if (limited(key, 5)) return err(429, "Too many wrong codes. Wait 15 minutes and try again.");
+
+    if (b.action === "confirm") {
+      const p = a.totpPending;
+      if (!p || Date.now() - new Date(p.at).getTime() > 30 * 60e3) return err(400, "Start the setup again.");
+      if (a.totp && !mfaFresh(session)) return err(403, "Enter a current code first.");
+      const step = checkTotp(p.secret, String(b.code ?? ""));
+      if (step === null) {
+        fail(key);
+        return err(400, "That code is not right. Check the time on your phone and try the newest code.");
       }
+      forgive(key);
+      const { codes, hashes } = await newRecoveryCodes();
+      a.totp = { secret: p.secret, enabledAt: new Date().toISOString(), lastStep: step, recovery: hashes };
+      delete a.totpPending;
+      session.mfaAt = new Date().toISOString();
+      await saveAccount(a);
+      await audit(req, a.email, "Two-step login set up");
+      return ok({ recovery: codes });
     }
-    if (!how) {
-      fail(key);
-      await audit(req, a.email, "Wrong two-step code");
-      return err(400, "That code is not right.");
-    }
-    forgive(key);
-    o.session.mfaAt = new Date().toISOString();
-    await saveAccount(a);
-    await audit(req, a.email, how === "code" ? "Admin unlocked" : "Admin unlocked with a recovery code", undefined, how === "recovery code" ? `${a.totp.recovery.length} recovery codes left` : undefined);
-    return ok({ ok: true, recoveryLeft: a.totp.recovery.length });
-  }
 
-  return err(400, "Unknown action.");
+    if (b.action === "verify") {
+      if (!a.totp) return err(400, "Two-step login is not set up.");
+      const code = String(b.code ?? "").trim();
+      let how = "";
+      const step = checkTotp(a.totp.secret, code, a.totp.lastStep);
+      if (step !== null) {
+        a.totp.lastStep = step;
+        how = "code";
+      } else {
+        const i = await findRecoveryCode(a.totp.recovery, code);
+        if (i >= 0) {
+          a.totp.recovery.splice(i, 1); // each recovery code works once
+          how = "recovery code";
+        }
+      }
+      if (!how) {
+        fail(key);
+        await audit(req, a.email, "Wrong two-step code");
+        return err(400, "That code is not right.");
+      }
+      forgive(key);
+      session.mfaAt = new Date().toISOString();
+      await saveAccount(a);
+      await audit(req, a.email, how === "code" ? "Admin unlocked" : "Admin unlocked with a recovery code", undefined, how === "recovery code" ? `${a.totp.recovery.length} recovery codes left` : undefined);
+      return ok({ ok: true, recoveryLeft: a.totp.recovery.length });
+    }
+
+    return err(400, "Unknown action.");
+  });
 }

@@ -1,4 +1,4 @@
-import { getAccount, saveAccount } from "@/lib/accounts";
+import { updateAccount } from "@/lib/accounts";
 import { body, err, ok } from "@/lib/http";
 import { verifyLicence } from "@/lib/licence-token";
 
@@ -7,10 +7,10 @@ export async function POST(req: Request) {
   const { token } = await body<{ token: string }>(req);
   const p = await verifyLicence(String(token ?? ""));
   if (!p) return err(401, "Invalid licence.");
-  const a = await getAccount(p.acc);
-  if (a) {
+  await updateAccount(p.acc, (a) => {
+    const before = a.licence.devices.length;
     a.licence.devices = a.licence.devices.filter((d) => d.id !== p.dev);
-    await saveAccount(a);
-  }
+    return a.licence.devices.length !== before;
+  });
   return ok({ released: true });
 }

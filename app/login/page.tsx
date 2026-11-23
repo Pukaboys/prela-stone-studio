@@ -5,9 +5,20 @@ import "../site.css";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { TRIAL_DAYS } from "@/lib/plans";
 
-/** Only same-site paths are allowed as a return address. */
+/**
+ * Only same-site paths are allowed as a return address. Checked by resolving
+ * it like the browser will: "/\evil.com" or "/%09/evil.com" would otherwise
+ * pass a simple "starts with one slash" test and leave the site.
+ */
 function safeNext(raw: string | null) {
-  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/account";
+  if (!raw || !raw.startsWith("/") || /[\\\s]/.test(raw)) return "/account";
+  try {
+    const u = new URL(raw, window.location.origin);
+    if (u.origin === window.location.origin) return u.pathname + u.search + u.hash;
+  } catch {
+    // not a valid address
+  }
+  return "/account";
 }
 
 export default function Login() {

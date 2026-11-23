@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     if (limited(key, 3)) return err(429, "We already sent a few emails. Check your spam folder, or wait 15 minutes.");
     if (!(await mailEnabled())) return err(503, "Email is not set up on this site.");
     fail(key);
-    const url = `${await siteUrl(req)}/verify?token=${encodeURIComponent(await makeLinkToken("verify", a, 72))}`;
+    const url = `${await siteUrl()}/verify?token=${encodeURIComponent(await makeLinkToken("verify", a, 72))}`;
     const sent = await sendMail(verifyEmail(a, url));
     return sent ? ok({ sent: true }) : err(503, "The email could not be sent. Please try again later.");
   }
