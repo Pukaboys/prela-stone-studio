@@ -79,6 +79,12 @@ export default defineConfig(async () => {
 
   return {
     define: { __BUILD_INFO__: JSON.stringify(buildInfo()) },
+    // Minify the server code too (Vite leaves it readable by default): the
+    // desktop app ships it to customers' computers.
+    environments: {
+      rsc: { build: { minify: true } },
+      ssr: { build: { minify: true } },
+    },
     server: {
       ...(managedLinux ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] } : {}),
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),

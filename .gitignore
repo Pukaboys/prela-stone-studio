@@ -48,3 +48,6 @@ next-env.d.ts
 
 # desktop installers (electron-builder)
 /release/
+# sealed server and its hash (desktop/before-pack.cjs)
+/desktop/.pack/
+/desktop/app/server-integrity.json

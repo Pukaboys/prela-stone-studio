@@ -17,11 +17,35 @@ const { pathToFileURL } = require("node:url");
 const PREFERRED_PORT = 47821;
 const isMac = process.platform === "darwin";
 
-// Packaged: the server is copied next to the app as an extra resource.
+// Packaged: the server is sealed in one archive next to the app
+// (resources/server.asar, see desktop/before-pack.cjs).
 // Development (`pnpm desktop`): use the fresh build in dist/standalone.
 const serverDir = app.isPackaged
-  ? path.join(process.resourcesPath, "server")
+  ? path.join(process.resourcesPath, "server.asar")
   : path.join(__dirname, "..", "..", "dist", "standalone");
+
+/**
+ * The packaged server must be exactly the one this app was built with: its
+ * SHA-256 is stored in server-integrity.json inside app.asar (which Electron
+ * checks itself at start). A changed server (e.g. a licence check removed)
+ * is refused.
+ */
+function verifyServer() {
+  if (!app.isPackaged) return;
+  // original-fs reads the archive as a file (plain fs would open it like a folder).
+  const ofs = require("original-fs");
+  const expected = require("./server-integrity.json").sha256;
+  const hash = crypto.createHash("sha256");
+  const fd = ofs.openSync(serverDir, "r");
+  try {
+    const buf = Buffer.alloc(4 * 1024 * 1024);
+    let n;
+    while ((n = ofs.readSync(fd, buf, 0, buf.length, null)) > 0) hash.update(buf.subarray(0, n));
+  } finally {
+    ofs.closeSync(fd);
+  }
+  if (hash.digest("hex") !== expected) throw new Error("The app's files were changed or are damaged. Please reinstall Jeo Stone Studio.");
+}
 
 // The smoke test must never write into the user's real projects folder.
 if (process.env.JEO_SMOKE_TEST === "1")
@@ -129,6 +153,7 @@ async function startServer() {
   process.env.JEO_DATA_KEY = dataKey();
   // Where licences are activated and checked.
   process.env.JEO_LICENSE_SERVER = LICENSE_SERVER;
+  verifyServer();
   // server.js reads PORT/HOST and starts listening when imported.
   await import(pathToFileURL(path.join(serverDir, "server.js")).href);
   baseUrl = `http://127.0.0.1:${port}`;
@@ -159,6 +184,8 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      // No developer tools in the version customers get.
+      devTools: !app.isPackaged,
     },
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());
@@ -240,8 +267,7 @@ function buildMenu() {
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
-        { type: "separator" },
-        { role: "toggleDevTools" },
+        ...(app.isPackaged ? [] : [{ type: "separator" }, { role: "toggleDevTools" }]),
       ],
     },
     { role: "windowMenu" },
@@ -306,7 +332,10 @@ async function smokeTest() {
       savedProjects: listRes.ok ? list.length : "locked (" + listRes.status + ")",
     };
   })()`);
-  console.log("SMOKE " + JSON.stringify({ activation, ...report, dataDir: process.env.DATA_DIR, serverDir }));
+  const line = "SMOKE " + JSON.stringify({ activation, ...report, dataDir: process.env.DATA_DIR, serverDir });
+  console.log(line);
+  // A packaged Windows app has no console: JEO_SMOKE_OUT names a file for the report.
+  if (process.env.JEO_SMOKE_OUT) fs.writeFileSync(process.env.JEO_SMOKE_OUT, line + "\n");
   app.exit(0);
 }
 
@@ -319,6 +348,12 @@ app.whenReady().then(async () => {
     // Quietly look for a newer release a few seconds after start.
     setTimeout(() => checkForUpdates(false), 5000);
   } catch (error) {
+    if (process.env.JEO_SMOKE_TEST === "1") {
+      const line = "SMOKE-FAILED " + (error instanceof Error ? error.message : String(error));
+      console.error(line);
+      if (process.env.JEO_SMOKE_OUT) fs.writeFileSync(process.env.JEO_SMOKE_OUT, line + "\n");
+      return app.exit(1);
+    }
     dialog.showErrorBox(
       "Jeo Stone Studio could not start",
       `${error instanceof Error ? error.message : String(error)}\n\nServer folder: ${serverDir}`,

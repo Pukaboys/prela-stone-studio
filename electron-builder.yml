@@ -15,6 +15,8 @@ directories:
 files:
   - main.cjs
   - package.json
+  # SHA-256 of resources/server.asar, written by desktop/before-pack.cjs.
+  - server-integrity.json
   # The shell needs no npm packages; never bundle the website's dependencies.
   - "!**/node_modules/**"
 
@@ -22,16 +24,30 @@ files:
 npmRebuild: false
 nodeGypRebuild: false
 
-# The self-contained Node server from `pnpm run build` (dist/standalone),
-# copied as-is next to the app (resources/server).
+# The self-contained Node server from `pnpm run build` (dist/standalone) is
+# sealed into one archive with its node_modules (desktop/before-pack.cjs) and
+# shipped as resources/server.asar. main.cjs checks its hash before starting it.
+beforePack: desktop/before-pack.cjs
+# (A folder copied to ".", so electron-builder records the archive in the
+# executable's integrity list as resources/server.asar: with the integrity
+# fuse on, Electron refuses to open any archive that is not listed.)
 extraResources:
-  - from: dist/standalone
-    to: server
-    filter:
-      - "**/*"
-# electron-builder skips node_modules in extraResources; this hook copies the
-# server's node_modules into resources/server after packing.
-afterPack: desktop/after-pack.cjs
+  - from: desktop/.pack/resources
+    to: .
+
+# Lock the Electron binary down (written into the executable itself):
+# no running it as plain Node, no NODE_OPTIONS / --inspect to inject code or
+# attach a debugger, and app.asar is checked against a hash stored in the
+# executable at every start, so edited app files stop the app.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+  resetAdHocDarwinSignature: true
 
 asar: true
 compression: normal
