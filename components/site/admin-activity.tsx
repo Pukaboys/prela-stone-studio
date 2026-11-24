@@ -2,7 +2,7 @@
 /** Admin: customer activity log (sign-ins, wrong passwords, desktop app, downloads…) with CSV export. */
 import { useEffect, useMemo, useState } from "react";
 
-type Entry = { at: string; action: string; ip: string; device?: string; detail?: string; by?: string; email: string };
+type Entry = { at: string; action: string; ip: string; device?: string; detail?: string; by?: string; earlier?: boolean; email: string };
 type Customer = { id: string; email: string; name?: string };
 
 const fmtTime = (iso: string) =>
@@ -20,7 +20,7 @@ const KINDS: { id: string; label: string; test: (a: string) => boolean }[] = [
 ];
 
 export default function AdminActivity({ customers, selected, onSelect, tick = 0 }: { customers: Customer[]; selected: string; onSelect: (id: string) => void; tick?: number }) {
-  const [months, setMonths] = useState(1);
+  const [months, setMonths] = useState(12);
   const [kind, setKind] = useState("");
   const query = selected ? `account=${encodeURIComponent(selected)}` : `months=${months}`;
   const want = `${query}#${tick}`;
@@ -105,7 +105,7 @@ export default function AdminActivity({ customers, selected, onSelect, tick = 0 
                   {!selected && <> · {e.email}</>}
                   {(e.detail || e.by) && <small>{[e.detail, e.by && `by ${e.by}`].filter(Boolean).join(" · ")}</small>}
                 </span>
-                <small className="activity-who">{[e.device, e.ip].filter(Boolean).join(" · ")}</small>
+                <small className="activity-who">{[e.device, e.ip || (e.earlier ? "from account records" : "")].filter(Boolean).join(" · ")}</small>
               </li>
             ))}
           </ul>

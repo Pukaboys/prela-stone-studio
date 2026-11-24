@@ -60,3 +60,12 @@ export async function recentAudit(limit = 200): Promise<AuditEntry[]> {
   const all = [...(await read(monthKey(prev))), ...(await read(monthKey(now)))];
   return all.reverse().slice(0, limit);
 }
+
+/** Every entry of the last `months` months, oldest first. */
+export async function auditSince(months: number): Promise<AuditEntry[]> {
+  await queue;
+  const now = new Date();
+  const all: AuditEntry[] = [];
+  for (let i = months; i >= 0; i--) all.push(...(await read(monthKey(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 15))))));
+  return all;
+}

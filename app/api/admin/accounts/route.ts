@@ -1,4 +1,4 @@
-import { logActivity } from "@/lib/activity";
+import { activityFor, fillEarlierHistory, logActivity } from "@/lib/activity";
 import { applyPayment, getAccount, listAccounts, publicAccount, saveAccount, sameOriginJson, type Account } from "@/lib/accounts";
 import { adminAccess } from "@/lib/admin";
 import { audit, recentAudit } from "@/lib/audit";
@@ -21,7 +21,10 @@ export async function GET(req: Request) {
   const me = await adminAccess(req);
   if (me instanceof Response) return me;
   const all = await listAccounts();
-  return ok({ accounts: all.map(row), activity: await recentAudit(200), recoveryLeft: me.account.totp?.recovery.length ?? 0 });
+  await fillEarlierHistory(all);
+  // The newest few events of each customer, shown in their row.
+  const recent = await Promise.all(all.map(async (a) => (await activityFor(a.id, 3)).slice(0, 3)));
+  return ok({ accounts: all.map((a, i) => ({ ...row(a), recent: recent[i] })), activity: await recentAudit(200), recoveryLeft: me.account.totp?.recovery.length ?? 0 });
 }
 
 export async function POST(req: Request) {

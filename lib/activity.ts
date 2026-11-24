@@ -8,6 +8,7 @@
  * links or project contents.
  */
 import { browserName, clientIp, listAccounts, withAccountLock, type Account } from "@/lib/accounts";
+import { auditSince } from "@/lib/audit";
 import { getStore } from "@/lib/storage";
 
 export type ActivityEntry = {
@@ -19,6 +20,8 @@ export type ActivityEntry = {
   detail?: string;
   /** Admin email, when the owner did it from the admin page. */
   by?: string;
+  /** Rebuilt from the account's records, from before the log started (no IP address). */
+  earlier?: true;
 };
 export type ActivityRow = ActivityEntry & { email: string };
 
@@ -135,6 +138,57 @@ export async function allActivity(months = 1, accounts?: Account[]): Promise<Act
   return rows.flat().sort((a, b) => b.at.localeCompare(a.at));
 }
 
+// ---------------------------------------------------------------- history from before the log
+/**
+ * What the account itself remembers from before this log existed: sign-up,
+ * payments, computers, signed-in browsers, and the owner's actions on it.
+ */
+export function earlierHistory(a: Account, adminLog: { at: string; action: string; by: string; target?: string; detail?: string }[]): ActivityEntry[] {
+  const e = (at: string | undefined, action: string, o: Partial<ActivityEntry> = {}): ActivityEntry[] =>
+    at && !Number.isNaN(Date.parse(at)) ? [{ at: new Date(at).toISOString(), action, ip: "", earlier: true, ...o }] : [];
+  const planName = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
+  return [
+    ...e(a.createdAt, "Account created"),
+    ...a.payments.flatMap((p) => e(p.at, `${planName(p.plan)} plan added`, { detail: `€${p.amount}${p.note ? ` · ${p.note}` : ""}` })),
+    ...a.licence.devices.flatMap((d) => [
+      ...e(d.activatedAt, "Desktop app activated on a new computer", { device: d.name }),
+      ...(d.lastSeen !== d.activatedAt ? e(d.lastSeen, "Desktop app opened (licence check)", { device: d.name }) : []),
+    ]),
+    ...(a.sessions ?? []).flatMap((s) => [
+      ...e(s.createdAt, "Signed in", { device: s.name }),
+      ...(s.lastSeen !== s.createdAt ? e(s.lastSeen, "Used the website", { device: s.name }) : []),
+    ]),
+    ...adminLog.filter((x) => x.target === a.email).flatMap((x) => e(x.at, x.action, { by: x.by, ...(x.detail ? { detail: x.detail } : {}) })),
+  ];
+}
+
+/**
+ * Once per account: add earlierHistory to its log (marked "earlier"). Runs
+ * when the owner opens the admin page; accounts already done are skipped.
+ */
+export async function fillEarlierHistory(accounts: Account[]) {
+  const store = await getStore();
+  const todo: Account[] = [];
+  for (const a of accounts) if (!(await store.get(`${prefixOf(a.id)}earlier.json`))) todo.push(a);
+  if (!todo.length) return 0;
+  const adminLog = await auditSince(KEEP_MONTHS);
+  const oldest = cutoff();
+  for (const a of todo) {
+    await withAccountLock("activity:" + a.id, async () => {
+      if (await store.get(`${prefixOf(a.id)}earlier.json`)) return;
+      const byMonth = new Map<string, ActivityEntry[]>();
+      for (const x of earlierHistory(a, adminLog)) if (x.at >= oldest) byMonth.set(x.at.slice(0, 7), [...(byMonth.get(x.at.slice(0, 7)) ?? []), x]);
+      for (const [m, add] of byMonth) {
+        const key = `${prefixOf(a.id)}${m}.json`;
+        const list = [...(await read(key)), ...add].sort((x, y) => x.at.localeCompare(y.at));
+        await store.put(key, JSON.stringify(list.slice(-MAX_PER_MONTH)), "application/json");
+      }
+      await store.put(`${prefixOf(a.id)}earlier.json`, JSON.stringify({ at: new Date().toISOString() }), "application/json");
+    });
+  }
+  return todo.length;
+}
+
 // ---------------------------------------------------------------- CSV
 /** One CSV cell; text that a spreadsheet would run as a formula is made plain. */
 function cell(v: unknown) {
@@ -144,7 +198,9 @@ function cell(v: unknown) {
 }
 export function activityCsv(rows: ActivityRow[]) {
   const head = ["Time (UTC)", "Customer", "Action", "Details", "IP address", "Browser / computer", "Done by"];
-  const lines = rows.map((r) => [r.at.replace("T", " ").slice(0, 19), r.email, r.action, r.detail, r.ip, r.device, r.by ?? "customer"].map(cell).join(","));
+  const lines = rows.map((r) =>
+    [r.at.replace("T", " ").slice(0, 19), r.email, r.action, r.earlier ? [r.detail, "from account records"].filter(Boolean).join(" · ") : r.detail, r.ip, r.device, r.by ?? "customer"].map(cell).join(","),
+  );
   // BOM so Excel opens it as UTF-8.
   return "﻿" + [head.join(","), ...lines].join("\r\n") + "\r\n";
 }

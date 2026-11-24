@@ -9,7 +9,8 @@ import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import type { PublicAccount } from "@/lib/accounts";
 import { PLANS } from "@/lib/plans";
 
-type Row = PublicAccount & { createdAt: string };
+type Recent = { at: string; action: string; ip: string; device?: string; detail?: string; earlier?: boolean };
+type Row = PublicAccount & { createdAt: string; recent?: Recent[] };
 type Activity = { at: string; action: string; by: string; ip: string; target?: string; detail?: string };
 const fmtTime = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -51,8 +52,18 @@ function Customer({ row, onChange, onError, onActivity }: { row: Row; onChange: 
           Joined {fmtDate(row.createdAt)} · {row.devices.length} of {l.maxDevices} computers · {row.browsers.length} of {row.maxBrowsers} browsers
           {row.browsers.length > 0 && ` (${row.browsers.map((b) => b.name).join(", ")})`}
         </small>
+        {row.recent && row.recent.length > 0 && (
+          <ul className="admin-recent">
+            {row.recent.map((e, i) => (
+              <li key={e.at + i} className={/wrong|blocked|refused/i.test(e.action) ? "activity-warn" : undefined}>
+                <time>{fmtTime(e.at)}</time> <b>{e.action}</b>
+                {[e.detail, e.device, e.ip].filter(Boolean).length > 0 && <> · {[e.detail, e.device, e.ip].filter(Boolean).join(" · ")}</>}
+              </li>
+            ))}
+          </ul>
+        )}
         <button type="button" className="linkish" onClick={onActivity}>
-          Activity
+          All activity of this customer
         </button>
       </div>
       <div className={l.active ? "status-ok" : "status-bad"}>

@@ -92,6 +92,32 @@ describe("customer activity log", () => {
     expect(text).toContain("carla@example.com,Wrong password,website sign-in,203.0.113.7,Chrome on Windows,customer");
   });
 
+  it("fills in the history from before the log, once per account", async () => {
+    // An account from before the log: made directly, so nothing was logged.
+    const a = await accounts.createAccount("olga@example.com", "olga-pass-2026");
+    const day = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
+    a.createdAt = day(30);
+    a.payments.push({ orderId: "OLD-1", plan: "yearly", amount: "190.00", currency: "EUR", at: day(20) });
+    a.licence.devices.push({ id: crypto.randomUUID(), name: "Shop laptop", activatedAt: day(19), lastSeen: day(1) });
+    a.sessions = [{ id: "s1", name: "Safari on Mac", createdAt: day(5), lastSeen: day(2) }];
+    await accounts.saveAccount(a);
+    await activity.logActivity(null, a, "Signed in"); // something logged since the log started
+    expect(await activity.fillEarlierHistory([a])).toBe(1);
+    expect(await activity.fillEarlierHistory([a])).toBe(0); // only once
+    const list = await activity.activityFor(a.id);
+    expect(list[0].action).toBe("Signed in");
+    expect(list.filter((e) => e.earlier).map((e) => e.action).reverse()).toEqual([
+      "Account created",
+      "Yearly plan added",
+      "Desktop app activated on a new computer",
+      "Signed in",
+      "Used the website",
+      "Desktop app opened (licence check)",
+    ]);
+    expect(list.find((e) => e.action === "Yearly plan added")).toMatchObject({ detail: "€190.00", ip: "", earlier: true });
+    expect(list.map((e) => e.at)).toEqual([...list.map((e) => e.at)].sort().reverse()); // still newest first
+  });
+
   it("CSV cells cannot run as spreadsheet formulas", () => {
     const csv = activity.activityCsv([{ at: "2026-11-24T10:00:00.000Z", email: "a@b.c", action: "Desktop app activated", ip: "1.2.3.4", device: '=HYPERLINK("http://evil","x")' }]);
     expect(csv).toContain(`"'=HYPERLINK(""http://evil"",""x"")"`);

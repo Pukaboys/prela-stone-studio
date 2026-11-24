@@ -235,6 +235,8 @@ html:has(.site) { scroll-behavior: smooth; }
 .site .activity-list small { display: block; color: var(--muted); }
 .site .activity-who { color: var(--muted); font-size: 0.82rem; text-align: right; }
 .site .activity-warn b { color: #ffb4a9; }
+.site .admin-recent { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; font-size: 0.85rem; color: var(--muted); }
+.site .admin-recent b { color: var(--text); font-weight: 600; }
 .site .admin-row .admin-who button.linkish { justify-self: start; background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; font-size: 0.85rem; }
 @media (max-width: 760px) { .site .activity-list li { grid-template-columns: 1fr; } .site .activity-who { text-align: left; } }
 
