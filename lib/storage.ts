@@ -29,6 +29,7 @@ export interface ObjectStore {
     meta?: Record<string, string>,
   ): Promise<void>;
   list(prefix: string): Promise<ListedObject[]>;
+  remove(key: string): Promise<void>;
   /** File store only: the file on disk for a key (large files are streamed from it). */
   filePath?(key: string): string;
 }
@@ -75,6 +76,9 @@ function r2Store(bucket: R2Bucket): ObjectStore {
         meta: o.customMetadata ?? {},
       }));
     },
+    async remove(key) {
+      await bucket.delete(key);
+    },
   };
 }
 
@@ -120,6 +124,10 @@ async function fileStore(): Promise<ObjectStore> {
       await fs.writeFile(tmp, bytes);
       await fs.rename(tmp, file);
       await fs.writeFile(sidecar(file), JSON.stringify({ contentType, meta } satisfies Meta));
+    },
+    async remove(key) {
+      const file = resolve(key);
+      await Promise.all([fs.rm(file, { force: true }), fs.rm(sidecar(file), { force: true })]);
     },
     async list(prefix) {
       const dir = resolve(prefix.replace(/\/$/, ""));

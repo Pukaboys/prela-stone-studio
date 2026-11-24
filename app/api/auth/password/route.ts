@@ -1,3 +1,4 @@
+import { logActivity } from "@/lib/activity";
 import { ACCOUNT_TRIES, checkPassword, currentAccount, fail, passwordProblem, limited, sameOriginJson, setPassword, startSession } from "@/lib/accounts";
 import { body, err, ok } from "@/lib/http";
 
@@ -11,10 +12,12 @@ export async function POST(req: Request) {
   const b = await body<{ current: string; next: string }>(req);
   if (!(await checkPassword(a, String(b.current ?? "")))) {
     fail(tries);
+    await logActivity(req, a, "Wrong current password", { detail: "changing password" });
     return err(400, "Your current password is wrong.");
   }
   const problem = passwordProblem(String(b.next ?? ""));
   if (problem) return err(400, problem);
   await setPassword(a, String(b.next));
+  await logActivity(req, a, "Password changed", { detail: "other browsers signed out" });
   return ok({ changed: true }, { "Set-Cookie": await startSession(req, a) });
 }

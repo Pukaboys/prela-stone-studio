@@ -1,3 +1,4 @@
+import { logActivity } from "@/lib/activity";
 import { AccountError, clientIp, fail, limited, passwordProblem, publicAccount, readLinkToken, saveAccount, sameOriginJson, setPassword, startSession } from "@/lib/accounts";
 import { body, err, ok } from "@/lib/http";
 
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
   const problem = passwordProblem(String(b.password ?? ""));
   if (problem) return err(400, problem);
   await setPassword(a, String(b.password));
+  await logActivity(req, a, "Password reset from email link", { detail: "every browser signed out" });
   // Getting the link proves the address works.
   if (a.emailVerified !== true) {
     a.emailVerified = true;

@@ -1,3 +1,4 @@
+import { logActivity } from "@/lib/activity";
 import { AccountError, clientIp, createAccount, fail, limited, makeLinkToken, passwordProblem, publicAccount, sameOriginJson, startSession, validEmail } from "@/lib/accounts";
 import { ownerNewAccountEmail, siteUrl, verifyEmail } from "@/lib/emails";
 import { sendMail } from "@/lib/mail";
@@ -20,6 +21,7 @@ export async function POST(req: Request) {
     const a = await createAccount(email, password, typeof b.name === "string" ? b.name : undefined);
     fail(ip); // count successful sign-ups too (max 5 per 15 minutes per address)
     const cookie = await startSession(req, a);
+    await logActivity(req, a, "Account created", { detail: "free trial started" });
     const site = await siteUrl();
     if (a.emailVerified === false)
       void sendMail(verifyEmail(a, `${site}/verify?token=${encodeURIComponent(await makeLinkToken("verify", a, 72))}`));

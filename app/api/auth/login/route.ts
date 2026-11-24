@@ -1,3 +1,4 @@
+import { logActivity } from "@/lib/activity";
 import { ACCOUNT_TRIES, AccountError, clientIp, fail, findByEmail, forgive, limited, passwordMatches, publicAccount, sameOriginJson, startSession } from "@/lib/accounts";
 import { body, err, ok } from "@/lib/http";
 import { isDesktop } from "@/lib/studio-access";
@@ -11,22 +12,30 @@ export async function POST(req: Request) {
   const ip = clientIp(req);
   const key = `login:${ip}:${email}`;
   const acct = `password:${email}`;
-  if (limited(key) || limited("login-ip:" + ip, 30) || limited(acct, ACCOUNT_TRIES))
+  if (limited(key) || limited("login-ip:" + ip, 30) || limited(acct, ACCOUNT_TRIES)) {
+    const who = email ? await findByEmail(email) : null;
+    if (who) await logActivity(req, who, "Sign-in blocked: too many attempts", { once: { key: ip, ms: 15 * 60e3 } });
     return err(429, "Too many attempts. Wait 15 minutes and try again.");
+  }
   const a = email ? await findByEmail(email) : null;
   if (!(await passwordMatches(a, String(b.password ?? "")))) {
     fail(key);
     fail("login-ip:" + ip);
     fail(acct);
+    if (a) await logActivity(req, a, "Wrong password", { detail: "website sign-in" });
     await new Promise((r) => setTimeout(r, 400));
     return err(401, "Wrong email or password.");
   }
   forgive(key);
   try {
     const cookie = await startSession(req, a!);
+    await logActivity(req, a!, "Signed in");
     return ok({ account: publicAccount(a!) }, { "Set-Cookie": cookie });
   } catch (e) {
-    if (e instanceof AccountError) return err(409, e.message);
+    if (e instanceof AccountError) {
+      await logActivity(req, a!, "Sign-in refused: browser limit reached");
+      return err(409, e.message);
+    }
     throw e;
   }
 }

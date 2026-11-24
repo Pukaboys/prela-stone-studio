@@ -1,3 +1,4 @@
+import { logActivity } from "@/lib/activity";
 import { clientIp, fail, findByEmail, limited, makeLinkToken, sameOriginJson } from "@/lib/accounts";
 import { resetEmail, siteUrl } from "@/lib/emails";
 import { body, err, ok } from "@/lib/http";
@@ -21,6 +22,7 @@ export async function POST(req: Request) {
   const a = email && !limited(to, 3) ? await findByEmail(email) : null;
   if (a) {
     fail(to);
+    await logActivity(req, a, "Password reset email requested");
     const url = `${await siteUrl()}/reset?token=${encodeURIComponent(await makeLinkToken("reset", a, 1))}`;
     void sendMail(resetEmail(a, url));
   }

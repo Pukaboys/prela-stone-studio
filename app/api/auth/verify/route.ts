@@ -1,3 +1,4 @@
+import { logActivity } from "@/lib/activity";
 import { clientIp, currentSession, fail, limited, makeLinkToken, ownerStatus, readLinkToken, saveAccount, sameOriginJson } from "@/lib/accounts";
 import { siteUrl, verifyEmail } from "@/lib/emails";
 import { body, err, ok } from "@/lib/http";
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
   if (a.emailVerified !== true) {
     a.emailVerified = true; // proven by the link
     await saveAccount(a);
+    await logActivity(req, a, "Email confirmed");
   }
   return ok({ verified: true, email: a.email });
 }

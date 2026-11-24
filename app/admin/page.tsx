@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "../site.css";
 import { TwoStepCode, TwoStepSetup } from "@/components/site/admin-2fa";
+import AdminActivity from "@/components/site/admin-activity";
 import AdminReleases from "@/components/site/admin-releases";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import type { PublicAccount } from "@/lib/accounts";
@@ -23,7 +24,7 @@ async function post(data: unknown) {
   return json.account;
 }
 
-function Customer({ row, onChange, onError }: { row: Row; onChange: (r: Row) => void; onError: (m: string) => void }) {
+function Customer({ row, onChange, onError, onActivity }: { row: Row; onChange: (r: Row) => void; onError: (m: string) => void; onActivity: () => void }) {
   const [plan, setPlan] = useState<string>(PLANS[PLANS.length - 1].id);
   const [amount, setAmount] = useState(String(PLANS[PLANS.length - 1].price));
   const [note, setNote] = useState("");
@@ -50,6 +51,9 @@ function Customer({ row, onChange, onError }: { row: Row; onChange: (r: Row) => 
           Joined {fmtDate(row.createdAt)} · {row.devices.length} of {l.maxDevices} computers · {row.browsers.length} of {row.maxBrowsers} browsers
           {row.browsers.length > 0 && ` (${row.browsers.map((b) => b.name).join(", ")})`}
         </small>
+        <button type="button" className="linkish" onClick={onActivity}>
+          Activity
+        </button>
       </div>
       <div className={l.active ? "status-ok" : "status-bad"}>
         {PLAN_LABEL[l.plan] ?? l.plan} · {l.active ? `until ${fmtDate(l.expiresAt)} (${l.daysLeft} d)` : `ended ${fmtDate(l.expiresAt)}`}
@@ -122,6 +126,7 @@ export default function Admin() {
   const [recoveryLeft, setRecoveryLeft] = useState(0);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
+  const [watch, setWatch] = useState("");
   const [tick, setTick] = useState(0);
   const reload = () => setTick((t) => t + 1);
 
@@ -195,6 +200,10 @@ export default function Admin() {
                       key={r.id}
                       row={r}
                       onError={setError}
+                      onActivity={() => {
+                        setWatch(r.id);
+                        document.getElementById("customer-activity")?.scrollIntoView({ behavior: "smooth" });
+                      }}
                       onChange={(n) => {
                         setRows((all) => (all ?? []).map((x) => (x.id === n.id ? n : x)));
                         reload(); // refresh the activity log
@@ -204,9 +213,10 @@ export default function Admin() {
                 </ul>
               )}
             </section>
+            <AdminActivity customers={rows} selected={watch} onSelect={setWatch} tick={tick} />
             <AdminReleases onChanged={reload} />
             <section className="account-card">
-              <h2>Activity</h2>
+              <h2>Admin activity</h2>
               <p className="muted">Every admin action and two-step login, with time and IP address (this month and last month).</p>
               {activity.length === 0 ? (
                 <p className="muted">Nothing yet.</p>

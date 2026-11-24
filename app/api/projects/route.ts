@@ -1,9 +1,12 @@
+import { logActivity } from "@/lib/activity";
 import { validProject } from "@/lib/model";
 import { TooLarge, readText } from "@/lib/http";
 import { quotaFull, requireStudio } from "@/lib/studio-access";
 import { getStore } from "@/lib/storage";
 
 const ID = /^[a-zA-Z0-9-]+$/;
+/** Website sync from the desktop app (signs requests with the computer's licence). */
+const fromDesktop = (req: Request) => (req.headers.get("authorization") ?? "").startsWith("Licence ");
 const MAX_CHARS = 500_000;
 
 export async function GET(req: Request) {
@@ -17,6 +20,7 @@ export async function GET(req: Request) {
       if (!ID.test(id)) return new Response("Invalid project", { status: 400 });
       const obj = await store.get(prefix + "projects/" + id + ".json");
       if (!obj) return new Response("Project not found", { status: 404 });
+      if (fromDesktop(req) && access.account) await logActivity(req, access.account, "Project downloaded to the desktop app", { device: "Desktop app", detail: id });
       return new Response(obj.body as BodyInit, {
         headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
       });
@@ -60,6 +64,8 @@ export async function POST(req: Request) {
     await store.put(prefix + "projects/" + id + ".json", JSON.stringify(p), "application/json", {
       name: p.name,
     });
+    if (fromDesktop(req) && access.account)
+      await logActivity(req, access.account, "Project uploaded from the desktop app", { device: "Desktop app", detail: String(p.name || "Untitled").slice(0, 100) });
     return Response.json({ id });
   } catch (e) {
     if (e instanceof TooLarge) return new Response("Project too large", { status: 413 });

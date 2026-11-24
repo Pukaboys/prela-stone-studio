@@ -1,3 +1,4 @@
+import { logActivity } from "@/lib/activity";
 import { applyPayment, getAccount, listAccounts, publicAccount, saveAccount, sameOriginJson, type Account } from "@/lib/accounts";
 import { adminAccess } from "@/lib/admin";
 import { audit, recentAudit } from "@/lib/audit";
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
     const note = String(b.note ?? "").trim().slice(0, 200) || undefined;
     const before = a.licence.expiresAt;
     await applyPayment(a, `MANUAL-${Date.now()}`, plan.id, amount.toFixed(2), note);
+    await logActivity(req, a, `${plan.name} plan added`, { by, detail: `€${amount.toFixed(2)} · until ${day(a.licence.expiresAt)}` });
     await audit(req, by, `Added ${plan.name} plan`, a.email, `€${amount.toFixed(2)} · until ${day(before)} → ${day(a.licence.expiresAt)}${note ? ` · ${note}` : ""}`);
     if (b.notify !== false) void sendMail(paymentEmail(a, amount.toFixed(2), plan.name, `${await siteUrl()}/account`));
     return ok({ account: row(a) });
@@ -48,6 +50,7 @@ export async function POST(req: Request) {
     const before = a.licence.expiresAt;
     a.licence = { ...a.licence, expiresAt: new Date().toISOString() };
     await saveAccount(a);
+    await logActivity(req, a, "Licence ended by the owner", { by });
     await audit(req, by, "Ended licence", a.email, `was until ${day(before)}`);
     return ok({ account: row(a) });
   }
@@ -55,6 +58,7 @@ export async function POST(req: Request) {
     const count = a.sessions?.length ?? 0;
     a.sessions = [];
     await saveAccount(a);
+    await logActivity(req, a, "Signed out of every browser by the owner", { by });
     await audit(req, by, "Signed out of every browser", a.email, `${count} browser${count === 1 ? "" : "s"}`);
     return ok({ account: row(a) });
   }
