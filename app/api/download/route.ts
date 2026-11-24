@@ -2,13 +2,16 @@ import { currentAccount, licenceStatus } from "@/lib/accounts";
 import { PLATFORMS, manifest, openInstaller, type Platform } from "@/lib/downloads";
 
 /**
- * Installer download: only for signed-in accounts with an active trial or
+ * Installer download: only for signed-in accounts with an active paid
  * plan. Streams from disk, and supports resuming (HTTP Range).
  */
 export async function GET(req: Request) {
   const a = await currentAccount(req);
   if (!a) return Response.redirect(new URL("/login?next=/account", req.url), 302);
   if (!licenceStatus(a).active) return new Response("Your licence has ended. Renew it on your account page.", { status: 402 });
+  // The desktop app comes with a paid plan, not with the free trial.
+  if (a.licence.plan === "trial")
+    return new Response("The desktop app comes with a paid plan. Choose a plan on your account page.", { status: 402 });
   const platform = new URL(req.url).searchParams.get("platform") as Platform;
   const name = PLATFORMS[platform] ? (await manifest())[PLATFORMS[platform].field] : undefined;
   const missing = () => new Response("This download is not available yet.", { status: 404 });

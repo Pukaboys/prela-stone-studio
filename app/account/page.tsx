@@ -198,6 +198,12 @@ export default function AccountPage() {
 
         <section className="account-card">
           <h2>Desktop app</h2>
+          {l.plan === "trial" ? (
+            <p className="muted">
+              The desktop app comes with a paid plan. Choose a plan above; the download appears here once your licence is active.
+            </p>
+          ) : (
+          <>
           <p className="muted">
             Download, install and sign in with this account. Your licence works on {l.maxDevices} computer{l.maxDevices === 1 ? "" : "s"}
             {version ? ` · latest version ${version}` : ""}.
@@ -222,6 +228,8 @@ export default function AccountPage() {
               ),
             )}
           </div>
+          </>
+          )}
           <h3>Computers using your licence ({account.devices.length} of {l.maxDevices})</h3>
           {account.devices.length === 0 ? (
             <p className="muted">None yet. Sign in to the desktop app to activate a computer.</p>

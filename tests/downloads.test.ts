@@ -74,9 +74,13 @@ describe("publishing installers", () => {
 });
 
 describe("downloading", () => {
-  it("customers with an active licence get the whole file, or a resumed part", async () => {
+  it("the free trial does not include the desktop app", async () => {
+    expect((await download.GET(req("download?platform=windows", { cookie: customer }))).status).toBe(402);
+  });
+  it("customers with a paid plan get the whole file, or a resumed part", async () => {
     expect((await download.GET(req("download?platform=windows"))).status).toBe(302); // not signed in
-    const r = await download.GET(req("download?platform=windows", { cookie: customer }));
+    await accounts.applyPayment((await accounts.findByEmail("client@example.com"))!, "TEST-1", "monthly", "19.00");
+    const r =await download.GET(req("download?platform=windows", { cookie: customer }));
     expect(r.status).toBe(200);
     expect(r.headers.get("content-length")).toBe(String(installer.length));
     expect(r.headers.get("content-disposition")).toContain("Jeo Stone Studio Setup 1.0.1.exe");
